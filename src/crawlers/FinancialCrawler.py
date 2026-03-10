@@ -7,25 +7,28 @@ from lxml import etree
 from pathlib import Path
 import sys
 
-# --- 路徑補丁 ---
-root_dir = Path(__file__).resolve().parent.parent.parent
-if str(root_dir) not in sys.path:
-    sys.path.insert(0, str(root_dir))
+# --- 路徑補patch ---
+root_dir = Path(__file__).resolve().parent.parent.parent # __file__：指目前這個 .py 檔案的絕對路徑，.parent....->往上回到專案根目錄
+if str(root_dir) not in sys.path:                        # .resolve()：消除路徑中的符號連結或相對路徑（如 ..），拿到最真實的路徑
+    sys.path.insert(0, str(root_dir))                    # sys.path.insert(0, str(root_dir))：將專案根目錄加入模組搜尋路徑的最前面，確保在 import 時優先找到這裡的模組
 
 # 引入自定義模組
-from src.utils.financial import to_number, to_datetime
-from src.utils.diff_index import search_index_list
-from configs.financial_cfg import (
-    URL_STMT, URL_DOC, HEADERS, FALLBACK_DICT, 
-    NEW_COL
-)
+from src.utils.config_loader import cfg, DB_PATH, DB_CONNECT_KWARGS
+from src.utils.parsing_utils import to_number, to_datetime
+from src.database.db_manager import IPO_DAO
+
+financial_cfg = cfg["crawlers"]["financial"]
+URL_STMT = financial_cfg["url_stmt"]
+URL_DOC = financial_cfg["url_doc"]
+HEADERS = financial_cfg["headers"]
+FALLBACK_DICT = financial_cfg["fallback_dict"]
+NUM_COLS = financial_cfg["num_cols"]
 
 class FinancialCrawler:
     def __init__(self):
-        self.save_folder = Path("./data/raw_table")
-        self.raw_data_path = self.save_folder / "bid_info.csv"
-        self.fina_stmt_path = self.save_folder / "fin_stmts.csv"
-        self.save_folder.mkdir(parents=True, exist_ok=True)
+        self.dao = IPO_DAO(DB_PATH, **DB_CONNECT_KWARGS)
+        self.table_name = "fin_stmts"
+        self.dao.ensure_table_exists(self.table_name)
 
     def make_xpath(self, label, col_index):
         return f"//tr[td[normalize-space(translate(., '　', ' '))='{label}']]/td[{col_index}]//text()"
@@ -113,7 +116,8 @@ class FinancialCrawler:
         """單一股票抓取流程 (你原本 main 裡的邏輯)"""
         try:
             search = self.search_year_season(code, start)
-            if search is None: return False, "Search result is None"
+            if search is None: 
+                return False, "Search result is None"
             
             print(f"股號: {code}, 最接近季度: {search}")
             y, s, t = search[1].split('/s')[0], search[1].split('/s')[1], search[2]
@@ -136,18 +140,32 @@ class FinancialCrawler:
             return (True, report) if report else (False, "Empty Report")
         except Exception as e:
             return False, str(e)
+        
     def run(self):
         """主程式入口：改為動態新增 (Incremental Concat) 模式"""
-        # 1. 取得現有資料與缺失索引
-        fs_df, diff_index, _ = search_index_list(
-            self.raw_data_path, self.fina_stmt_path, "證券代號", "投標開始日", NEW_COL
-        )
-
-        if diff_index is None:
-            print("❌ 找不到來源檔 bid_info.csv")
+        # 1. 讀取來源與目標資料
+        raw_df = self.dao.fetch_all("bid_info")
+        if raw_df.empty:
+            print("❌ 找不到來源資料 bid_info，無法繼續。")
             return
         
-        if diff_index.empty:
+        curr_data = self.dao.fetch_all(self.table_name)
+
+        # 2. 決定抓取模式
+        key_cols = ["證券代號", "投標開始日"]
+        if curr_data.empty:
+            print(f">>> [模式：初次全量] '{self.table_name}' 為空，準備進行首次完整抓取...")
+            raw_df[key_cols[1]] = pd.to_datetime(raw_df[key_cols[1]])
+            diff_index = [tuple(x) for x in raw_df[key_cols].to_numpy()]
+        else:
+            print(f">>> [模式：增量更新] '{self.table_name}' 已有資料，進行差異比對...")
+            _, diff_index = self.dao.diff_index(
+                raw_table="bid_info",
+                target_table=self.table_name,
+                key_cols=key_cols,
+            )
+
+        if not diff_index:
             print("✅ 資料已是最新。")
             return
 
@@ -160,7 +178,7 @@ class FinancialCrawler:
         try:
             # --- 兩輪嘗試邏輯 ---
             n = 0
-            fail_time = 2 # 可以根據需求調整總輪數
+            fail_time = 5 # 可以根據需求調整總輪數
             
             while fail and n < fail_time:
                 n += 1
@@ -183,7 +201,7 @@ class FinancialCrawler:
                         time.sleep(random.uniform(3, 6))
                     else:
                         print(f"失敗: {result}")
-                        time.sleep(2)
+                        time.sleep(10)
 
         except Exception as e:
             print(f"\n⚠️ 執行中斷: {e}")
@@ -191,25 +209,20 @@ class FinancialCrawler:
         finally:
             # --- 存檔邏輯：僅處理成功抓到的部分 ---
             if successful_results:
+                print(f"\n💾 執行最終存檔...")
                 # 1. 將成功抓到的資料轉成 DataFrame
                 new_data_df = pd.DataFrame(successful_results)
                 
                 # 2. 進行數值轉換與比率計算
-                # 確保 NEW_COL 裡的欄位是數值
-                cols_to_fix = [c for c in NEW_COL if c in new_data_df.columns]
+                cols_to_fix = [c for c in NUM_COLS if c in new_data_df.columns]
                 new_data_df[cols_to_fix] = new_data_df[cols_to_fix].apply(pd.to_numeric, errors='coerce')
-                
-                # 自動計算比率
                 new_data_df = self.calculate_ratios(new_data_df)
                 
-                # 3. Concat 回原始資料
-                final_df = pd.concat([fs_df, new_data_df], ignore_index=True)
-                
-                # 4. 存檔
-                final_df.to_csv(self.fina_stmt_path, index=False, encoding="utf-8-sig")
-                print(f"\n💾 已成功存檔 {len(successful_results)} 筆新資料。")
+                # 3. 直接 append 新資料
+                self.dao.save_data(new_data_df, self.table_name, if_exists="append")
+                print(f"✅ 存檔完成！本次新增 {len(successful_results)} 筆新資料至 '{self.table_name}'。")
             else:
-                print("\nℹ️ 沒有新抓到的成功資料，未更新檔案。")
+                print("\nℹ️ 沒有新抓到的成功資料，未更新資料庫。")
                 
             if fail:
                 print(f"❌ 最終未完成筆數: {len(fail)}")

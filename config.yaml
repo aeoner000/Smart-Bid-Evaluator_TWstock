@@ -1,0 +1,168 @@
+# Global configuration for Smart-Bid-Evaluator_TWstock
+# This file is intended to replace hard-coded *_cfg.py constants.
+
+database:
+  # SQLite database location (relative to repo root)
+  db_path: "data/database/database.sqlite3"
+  # Optional SQLite connect options
+  connect:
+    timeout: 30
+    check_same_thread: false
+
+common:
+  # Encoding for CSVs written by the project
+  csv_encoding: "utf-8-sig"
+  # Default User-Agent for web requests
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+crawlers:
+  auction:
+    api_url: "https://www.twse.com.tw/rwd/zh/announcement/auction"
+    year_range_url: "https://www.twse.com.tw/rwd/zh/announcement/auction/auctionYear"
+    rename_columns:
+      "投標截止日": "投標結束日"
+      "競拍股數": "競拍數量(張)"
+      "最低每標單位(張)": "最低每標單投標數量(張)"
+      "最高投(得)標單位(張)": "最高投(得)標數量(張)"
+      "保證金成數": "保證金成數(%)"
+      "合格投標量(張)": "合格投標數量(張)"
+      "實際承銷價格(元)": "承銷價格(元)"
+      "取消競價拍賣（流標或取消）": "取消競價拍賣(流標或取消)"
+    date_columns:
+      - "開標日期"
+      - "投標開始日"
+      - "投標結束日"
+      - "撥券日期(上市、上櫃日期)"
+    numeric_columns:
+      - "競拍數量(張)"
+      - "最低投標價格(元)"
+      - "最高投(得)標數量(張)"
+      - "得標總金額(元)"
+      - "總合格件"
+      - "合格投標數量(張)"
+      - "最低得標價格(元)"
+      - "最高得標價格(元)"
+      - "得標加權平均價格(元)"
+    int_columns:
+      - "最低每標單投標數量(張)"
+      - "保證金成數(%)"
+      - "每一投標單投標處理費(元)"
+
+  financial:
+    url_stmt: "https://mopsov.twse.com.tw/server-java/t164sb01"
+    url_doc: "https://doc.twse.com.tw/server-java/t57sb01"
+    headers:
+      User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    fallback_dict:
+      "營業收入":
+        - "營業收入合計"
+        - "收益合計"
+        - "淨收益"
+        - "收益"
+      "本期淨利":
+        - "母公司業主（淨利／損）"
+        - "本期稅後淨利（損）歸屬於母公司業主"
+        - "母公司業主"
+        - "母公司業主（淨利／損）"
+        - "本期淨利（淨損）"
+        - "本期淨利"
+      "每股盈餘":
+        - "基本每股盈餘合計"
+        - "基本每股盈餘"
+      "歸屬於母公司業主之權益合計":
+        - "歸屬於母公司業主之權益合計"
+        - "權益總計"
+        - "權益總額"
+      "已發行股份總數":
+        - "普通股股本"
+      "負債總計":
+        - "負債總計"
+      "資產總計":
+        - "資產總計"
+    num_cols:
+      - "營收成長率"
+      - "本期淨利成長率"
+      - "每股盈餘成長率"
+      - "ROE"
+      - "前一期ROE"
+      - "ROE成長率"
+      - "ROA"
+      - "前一期ROA"
+      - "ROA成長率"
+      - "每股淨值"
+      - "前一期每股淨值"
+      - "每股淨值成長率"
+      - "負債比"
+      - "前一期負債比"
+      - "負債比成長率"
+
+  market:
+    feature_cols:
+      - "外資平均增減"
+      - "投信平均增減"
+      - "自營商平均增減"
+      - "融資張數增減"
+      - "融券張數增減"
+      - "融資金額增減"
+      - "道瓊工業_10日漲幅(%)"
+      - "標普500_10日漲幅(%)"
+      - "那斯達克_10日漲幅(%)"
+      - "費城半導體_10日漲幅(%)"
+      - "大盤_10日漲幅(%)"
+      - "大盤_平均成交量"
+      - "櫃買_10日漲幅(%)"
+      - "櫃買_平均成交量"
+    usa_tickers:
+      - "^GSPC"
+      - "^IXIC"
+      - "^DJI"
+      - "^SOX"
+    usa_name_map:
+      "^GSPC": "標普500_10日漲幅(%)"
+      "^IXIC": "那斯達克_10日漲幅(%)"
+      "^DJI": "道瓊工業_10日漲幅(%)"
+      "^SOX": "費城半導體_10日漲幅(%)"
+
+  price:
+    price_cols:
+      - "前一日平均成交價"
+      - "前十日內平均成交價"
+      - "前十日內漲幅"
+      - "前一日成交金額"
+      - "前十日內平均成交金額"
+      - "前一日最高成交價"
+      - "前一日最低成交價"
+      - "前一日成交筆數"
+      - "前一日成交股數"
+      - "前十日內平均成交筆數"
+      - "前十日內平均成交股數"
+    headers:
+      User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+  revenue:
+    revenue_cols:
+      - "近一月營收"
+      - "近一月營收年增率"
+      - "近一月營收月增率"
+      - "營收增長規律性_R2"
+      - "營收風險波動率_cv"
+      - "近五月成長次數比率"
+    headers:
+      - "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      - "Referer": "https://mopsov.twse.com.tw/mops/web/t05st10_ifrs"
+      - "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+      - "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7"
+
+  target:
+    feature_cols:
+      - "成交量"
+      - "成交金額"
+      - "開盤價"
+      - "最高價"
+      - "最低價"
+      - "收盤價"
+      - "價差"
+      - "成交筆數"
+      - "預估獲利率"
+      - "最低得標加價率"
+      - "加權平均加價率"

@@ -7,28 +7,49 @@ root_path = Path(__file__).resolve().parent.parent.parent
 if str(root_path) not in sys.path:
     sys.path.insert(0, str(root_path))
 
-from configs.price_cfg import PRICE_COLS, HEADERS
+from src.utils.config_loader import cfg, DB_PATH, DB_CONNECT_KWARGS
 from src.utils.price import get_price_table, data_output
-from src.utils.diff_index import search_index_list
+from src.database.db_manager import IPO_DAO
+
+price_cfg = cfg["crawlers"]["price"]
+PRICE_COLS = price_cfg["price_cols"]
+HEADERS = price_cfg["headers"]
 
 class PriceCrawler:
     def __init__(self):
-        self.save_folder = root_path / "data" / "raw_table"
-        self.raw_data_path = self.save_folder / "bid_info.csv"
-        self.price_info_path = self.save_folder / "history_price_info.csv"
+        self.dao = IPO_DAO(DB_PATH, **DB_CONNECT_KWARGS)
+        self.table_name = "history_price_info"
+        self.dao.ensure_table_exists(self.table_name)
 
     def run(self):
-        # 1. 取得待處理名單 (透過 diff_index 工具)
-        curr_data, diff_index, _ = search_index_list(
-            self.raw_data_path, self.price_info_path, "證券代號", "投標開始日", PRICE_COLS
-        )
+        # 1. 讀取來源與目標資料
+        raw_df = self.dao.fetch_all("bid_info")
+        if raw_df.empty:
+            print("❌ 找不到來源資料 bid_info，無法繼續。")
+            return
         
-        if diff_index is None or diff_index.empty:
-            print("✅ 興櫃行情資料已是最新狀態。")
+        curr_data = self.dao.fetch_all(self.table_name)
+
+        # 2. 決定抓取模式
+        key_cols = ["證券代號", "投標開始日"]
+        if curr_data.empty:
+            print(f">>> [模式：初次全量] '{self.table_name}' 為空，準備進行首次完整抓取...")
+            raw_df[key_cols[1]] = pd.to_datetime(raw_df[key_cols[1]])
+            diff_index = [tuple(x) for x in raw_df[key_cols].to_numpy()]
+        else:
+            print(f">>> [模式：增量更新] '{self.table_name}' 已有資料，進行差異比對...")
+            _, diff_index = self.dao.diff_index(
+                raw_table="bid_info",
+                target_table=self.table_name,
+                key_cols=key_cols,
+            )
+
+        if not diff_index:
+            print("✅ 興櫃行情資料已是最新。")
             return
 
         newly_captured = []
-        print(f"🚀 開始執行興櫃行情抓取，共計 {len(diff_index)} 筆資料...")
+        print(f"🚀 開始執行興櫃行情抓取，待處理筆數: {len(diff_index)}")
 
         try:
             for code, target_date in diff_index:
@@ -58,20 +79,15 @@ class PriceCrawler:
         finally:
             # 2. 存檔邏輯：只要有抓到東西就合併存檔
             if newly_captured:
+                print("\n💾 執行最終存檔...")
                 new_df = pd.DataFrame(newly_captured)
                 # 確保數值欄位正確
                 for col in PRICE_COLS:
                     if col in new_df.columns:
                         new_df[col] = pd.to_numeric(new_df[col], errors='coerce')
                 
-                final_df = pd.concat([curr_data, new_df], ignore_index=True)
-                # 最後檢查一次不重複
-                final_df = final_df.drop_duplicates(subset=['證券代號', '投標開始日'], keep='last')
-                
-                # 確保資料夾存在
-                self.save_folder.mkdir(parents=True, exist_ok=True)
-                final_df.to_csv(self.price_info_path, index=False, encoding="utf-8-sig")
-                print(f"💾 存檔成功！新增 {len(newly_captured)} 筆，存檔路徑: {self.price_info_path.name}")
+                self.dao.save_data(new_df, self.table_name, if_exists="append")
+                print(f"✅ 存檔成功！本次新增 {len(newly_captured)} 筆資料至 '{self.table_name}'。")
             else:
                 print("ℹ️ 本次執行無任何新抓取到的資料。")
 

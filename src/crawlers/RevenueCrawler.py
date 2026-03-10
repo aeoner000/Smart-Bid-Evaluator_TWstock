@@ -12,25 +12,55 @@ root_path = Path(__file__).resolve().parent.parent.parent
 if str(root_path) not in sys.path:
     sys.path.insert(0, str(root_path))
 
-from configs.revenue_cfg import REVENUE_COLS, HEADERS
+from src.utils.config_loader import cfg, DB_PATH, DB_CONNECT_KWARGS
 from src.utils.revenue import get_revenue_data, calculate_revenue_features
-from src.utils.diff_index import search_index_list
+from src.database.db_manager import IPO_DAO
+
+revenue_cfg = cfg["crawlers"]["revenue"]
+REVENUE_COLS = revenue_cfg["revenue_cols"]
+# config.yaml 中的 revenue.headers 格式為 list of dicts，不符合 requests 需求。
+# 在此將其轉換為單一的 dict，才能正確設定 session headers。
+HEADERS_LIST = revenue_cfg["headers"]
+HEADERS = {k: v for d in HEADERS_LIST for k, v in d.items()}
 
 class RevenueCrawler:
     def __init__(self):
-        self.save_folder = root_path / "data" / "raw_table"
-        self.raw_data_path = self.save_folder / "bid_info.csv"
-        self.revenue_info_path = self.save_folder / "revenue_info.csv"
         self.session = requests.Session()
+        # 將 HEADERS 設為 session 的預設值，確保後續所有請求都帶上
+        self.session.headers.update(HEADERS)
         # 初始化 Cookie
-        self.session.get("https://mopsov.twse.com.tw/mops/web/t05st10_ifrs", headers=HEADERS, timeout=15)
+        self.session.get("https://mops.twse.com.tw/mops/#/web/t05st10_ifrs", timeout=15)
+
+        # Database access (SQLite)
+        self.dao = IPO_DAO(DB_PATH, **DB_CONNECT_KWARGS)
+        self.table_name = "revenue_info"
+        self.dao.ensure_table_exists(self.table_name)
 
     def run(self):
-        curr_data, diff_index, _ = search_index_list(
-            self.raw_data_path, self.revenue_info_path, "證券代號", "投標開始日", REVENUE_COLS
-        )
-        if diff_index is None or diff_index.empty:
-            print("✅ 營收資料已最新")
+        # 1. 讀取來源與目標資料
+        raw_df = self.dao.fetch_all("bid_info")
+        if raw_df.empty:
+            print("❌ 找不到來源資料 bid_info，無法繼續。")
+            return
+        
+        curr_data = self.dao.fetch_all(self.table_name)
+
+        # 2. 決定抓取模式
+        key_cols = ["證券代號", "投標開始日"]
+        if curr_data.empty:
+            print(f">>> [模式：初次全量] '{self.table_name}' 為空，準備進行首次完整抓取...")
+            raw_df[key_cols[1]] = pd.to_datetime(raw_df[key_cols[1]])
+            diff_index = [tuple(x) for x in raw_df[key_cols].to_numpy()]
+        else:
+            print(f">>> [模式：增量更新] '{self.table_name}' 已有資料，進行差異比對...")
+            _, diff_index = self.dao.diff_index(
+                raw_table="bid_info",
+                target_table=self.table_name,
+                key_cols=key_cols,
+            )
+
+        if not diff_index:
+            print("✅ 營收資料已是最新。")
             return
 
         newly_captured = []
@@ -81,14 +111,12 @@ class RevenueCrawler:
         
         finally:
             if newly_captured:
+                print(f"\n💾 執行最終存檔...")
                 new_df = pd.DataFrame(newly_captured)
-                final_df = pd.concat([curr_data, new_df], ignore_index=True)
-                # 確保不重複
-                final_df = final_df.drop_duplicates(subset=['證券代號', '投標開始日'], keep='last')
-                final_df.to_csv(self.revenue_info_path, index=False, encoding="utf-8-sig")
-                print(f"💾 已存檔 {len(newly_captured)} 筆資料至 {self.revenue_info_path.name}")
+                self.dao.save_data(new_df, self.table_name, if_exists="append")
+                print(f"✅ 存檔完成！本次新增 {len(newly_captured)} 筆資料至 '{self.table_name}'。")
             else:
-                print("ℹ️ 無新資料存檔")
+                print("\nℹ️ 本次執行無新資料可供存檔。")
 
 if __name__ == "__main__":
     RevenueCrawler().run()
