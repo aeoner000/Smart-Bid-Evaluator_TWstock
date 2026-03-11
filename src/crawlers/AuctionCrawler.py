@@ -17,7 +17,7 @@ if str(root_dir) not in sys.path:
 
 # 引入設定與工具
 from src.utils.config_loader import cfg, DB_PATH, DB_CONNECT_KWARGS
-from src.database.db_manager import IPO_DAO
+from src.db_base.db_manager import IPO_DAO
 
 auction_cfg = cfg["crawlers"]["auction"]
 API_URL = auction_cfg["api_url"]

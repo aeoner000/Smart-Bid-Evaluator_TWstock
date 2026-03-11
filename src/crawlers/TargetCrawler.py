@@ -13,7 +13,7 @@ if str(root_path) not in sys.path:
 from src.utils.config_loader import cfg, DB_PATH, DB_CONNECT_KWARGS
 from src.utils.target import get_target_value, cal_y_feature
 from src.utils.finmind_manager import FinMindManager
-from src.database.db_manager import IPO_DAO
+from src.db_base.db_manager import IPO_DAO
 
 target_cfg = cfg["crawlers"]["target"]
 FEATURE_COLS = target_cfg["feature_cols"]
@@ -42,25 +42,25 @@ class TargetCrawler:
         if raw_data.empty:
             print("❌ 找不到來源資料 bid_info，無法繼續。")
             return
-        
+        for col in self.time_col:
+            raw_data[col] = pd.to_datetime(raw_data[col])
         curr_data = self.dao.fetch_all(self.table_name)
 
         # 2. 決定抓取模式
         key_cols = [self.code_col] + self.time_col
         if curr_data.empty:
             print(f">>> [模式：初次全量] '{self.table_name}' 為空，準備進行首次完整抓取...")
-            for col in self.time_col:
-                raw_data[col] = pd.to_datetime(raw_data[col])
             diff_index = [tuple(x) for x in raw_data[key_cols].to_numpy()]
         else:
             print(f">>> [模式：增量更新] '{self.table_name}' 已有資料，進行差異比對...")
+            print(key_cols)
             _, diff_index = self.dao.diff_index(
                 raw_table="bid_info",
                 target_table=self.table_name,
                 key_cols=key_cols,
             )
 
-        if not diff_index:
+        if len(diff_index) == 0:
             print("✅ 目標變數資料已是最新。")
             return
 

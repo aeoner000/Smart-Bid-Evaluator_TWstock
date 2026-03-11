@@ -9,7 +9,7 @@
   │
 爬蟲層  (src/crawlers)       - 六種爬蟲對應六個表
   │
-資料庫層  (src/database)      - IPO_DAO 提供 CRUD 與增量
+資料庫層  (src/db_base)      - IPO_DAO 提供 CRUD 與增量
   │
 SQLite 存儲  (data/database)  - bid_info, fin_stmts, ...
   │

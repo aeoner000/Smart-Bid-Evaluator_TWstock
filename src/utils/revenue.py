@@ -6,7 +6,8 @@ import time, random
 
 def get_revenue_data(code, y, m, session):
     """從 MOPS 抓取單月營收"""
-    if y > 1911: y -= 1911
+    if y > 1911: 
+        y -= 1911
     m = str(m).zfill(2)
     url = "https://mopsov.twse.com.tw/mops/web/ajax_t05st10_ifrs"
     params = {

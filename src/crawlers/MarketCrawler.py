@@ -18,7 +18,7 @@ from src.utils.market import (
     get_market_tw
 )
 from src.utils.finmind_manager import FinMindManager
-from src.database.db_manager import IPO_DAO
+from src.db_base.db_manager import IPO_DAO
 
 market_cfg = cfg["crawlers"]["market"]
 FEATURE_COLS = market_cfg["feature_cols"]
@@ -67,12 +67,12 @@ class MarketCrawler:
                 target_table=self.table_name,
                 key_cols=key_cols,
             )
-
-        if not diff_index:
+   
+        if len(diff_index) == 0:
             print("✅ 資料已是最新，無需抓取。")
             return
 
-        tasks = deque(diff_index) # 使用隊列管理任務
+        tasks = deque(diff_index) # 用貯列先進先出
         newly_captured = []
         
         print(f"🚀 啟動爬蟲，剩餘任務：{len(tasks)} 筆")

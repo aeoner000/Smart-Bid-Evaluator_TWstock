@@ -16,7 +16,7 @@
 核心模組：
 
 - `src/crawlers/`：Auction、Financial、Market、Price、Revenue、Target 爬蟲。
-- `src/database/`：`IPO_DAO` 資料庫存取層與表結構。
+- `src/db_base/`：`IPO_DAO` 資料庫存取層與表結構。
 - `src/processors/data_clean.py`：清洗與特徵生成。
 - `src/models/train_model/`：訓練與堆疊邏輯。
 - `src/utils/`：配置、FinMind 管理、解析與其它輔助工具。
@@ -31,7 +31,7 @@
 smart-bid-evaluator/
 ├── src/
 │   ├── crawlers/          # 六種爬蟲實作
-│   ├── database/          # DAO 層 (`IPO_DAO`、schemas)
+│   ├── db_base/          # DAO 層 (`IPO_DAO`、schemas)
 │   ├── processors/        # 資料清洗、特徵工程
 │   ├── models/            # ML 模型、預處理、堆疊
 │   └── utils/             # 配置、API 管理、工具函數

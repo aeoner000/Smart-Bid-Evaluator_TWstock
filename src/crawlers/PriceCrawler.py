@@ -9,7 +9,7 @@ if str(root_path) not in sys.path:
 
 from src.utils.config_loader import cfg, DB_PATH, DB_CONNECT_KWARGS
 from src.utils.price import get_price_table, data_output
-from src.database.db_manager import IPO_DAO
+from src.db_base.db_manager import IPO_DAO
 
 price_cfg = cfg["crawlers"]["price"]
 PRICE_COLS = price_cfg["price_cols"]
@@ -44,7 +44,7 @@ class PriceCrawler:
                 key_cols=key_cols,
             )
 
-        if not diff_index:
+        if len(diff_index) == 0:
             print("✅ 興櫃行情資料已是最新。")
             return
 

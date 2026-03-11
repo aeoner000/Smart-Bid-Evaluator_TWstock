@@ -29,10 +29,10 @@ def cal_y_feature(curr_data, raw_data, code:str, bid_date:pd.Timestamp):
     2. 行情預測 : 加權平均加價率 => (得標加權平均價 / 最低投標價格) - 1
     3. 獲利預估 : 預估獲利率 => (首日收盤價 / 最低投標價格) - 1
     """
+    
     prices = [raw_data.loc[(raw_data["證券代號"] == code) & (raw_data["投標開始日"] == bid_date), col].squeeze()
         for col in ["最低投標價格(元)", "最低得標價格(元)", "得標加權平均價格(元)"]]
     bid_min, win_min, win_avg = [p if not isinstance(p, pd.Series) else np.nan for p in prices]
-
     close_p = curr_data["收盤價"].iloc[0]
 
     curr_data["預估獲利率"] = (close_p / bid_min) - 1
