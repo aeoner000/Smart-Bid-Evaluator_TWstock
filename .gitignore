@@ -8,6 +8,7 @@ src/models/saved_weights/
 .env
 *.log
 .venv/
+venv/
 env/
 .DS_Store
 
