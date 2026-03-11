@@ -8,12 +8,14 @@ root_path = Path(__file__).resolve().parent
 if str(root_path) not in sys.path:
     sys.path.insert(0, str(root_path))
 
-from src.crawlers.AuctionCrawler import AuctionCrawler
-from src.crawlers.FinancialCrawler import FinancialCrawler
-from src.crawlers.MarketCrawler import MarketCrawler
-from src.crawlers.PriceCrawler import PriceCrawler
-from src.crawlers.RevenueCrawler import RevenueCrawler
-from src.crawlers.TargetCrawler import TargetCrawler
+from src.crawlers import (
+    AuctionCrawler, 
+    FinancialCrawler, 
+    MarketCrawler, 
+    PriceCrawler, 
+    RevenueCrawler, 
+    TargetCrawler
+)
 
 def main():
     # 設定參數解析，方便單獨測試某個爬蟲
