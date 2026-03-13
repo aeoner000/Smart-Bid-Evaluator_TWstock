@@ -11,7 +11,7 @@ if str(root_path) not in sys.path:
     sys.path.insert(0, str(root_path))
 
 from src.utils.config_loader import cfg, DB_PATH, DB_CONNECT_KWARGS
-from src.utils.target import get_target_value, cal_y_feature
+from src.utils.target_utils import get_target_value, cal_y_feature
 from src.utils.finmind_manager import FinMindManager
 from src.db_base.db_manager import IPO_DAO
 

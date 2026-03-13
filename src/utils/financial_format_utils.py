@@ -20,7 +20,8 @@ def to_number(text):
     try:
         num = float(s)
         return -num if negative else num
-    except:
+    except Exception as e:
+        print(e)
         return None
 
 def to_datetime(text_list):
@@ -39,6 +40,7 @@ def to_datetime(text_list):
                 clean_text = f"{year}-{month}-{day}"
                 dt = pd.to_datetime(clean_text)
                 results.append(dt)
-        except:
+        except Exception as e:
+            print(e)
             pass
     return results

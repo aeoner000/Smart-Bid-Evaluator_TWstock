@@ -159,15 +159,49 @@ class IPO_DAO:
             return None
         return pd.to_datetime(df.iloc[0, 0])
 
-    def diff_index(
-        self,
-        raw_table: str,
-        target_table: str,
-        key_cols: List[str],
-    ) -> Tuple[pd.DataFrame, pd.Index]:
-        """取得 raw_table 中尚未存到 target_table 的 key index。
+    def combine_all_feature(self, config_dict:dict, merge_keys=['證券代號', '投標開始日']):
+        """
+        config_dict: key 為表名, value 為欄位 list
+        merge_keys: 在每一張表中名稱都一樣的關聯欄位
+        """
+        table_names = list(config_dict.keys()) # 取出要清理的所有表名
+        main_table_name = table_names[0]       # 主表名
+        other_tables_name = table_names[1:]    # 其他表名
 
-        使用 SQL 直接比對，避免整張表載入記憶體。
+        # 1. 主表的欄位
+        main_cols = [f'"{main_table_name}"."{c}"' for c in config_dict[main_table_name]]
+
+        # 2. 其他表的欄位 (為了避免衝突，加上表名.欄位名稱)
+        other_cols = [] # 完整欄位
+        for t in other_tables_name:
+            # 僅選取不在 merge_key s 中的欄位，且不加前綴，是為了要組成 select .... 去建立正確欄位有哪些
+            cols = [f'"{t}"."{c}"' for c in config_dict[t] if c not in merge_keys]
+            other_cols.extend(cols)
+        all_select_cols = ", ".join(main_cols + other_cols)
+
+        # 3. 構建 JOIN 條件
+        join_condition = [] # join條件
+        for t in other_tables_name:
+                          #  ex. "bid_info"."證券代號" = "fin_stmts"."證券代號" AND "bid_info"."投標開始日" = "fin_stmts"."投標開始日"
+            on_condition = " AND ".join([f'"{main_table_name}"."{k}" = "{t}"."{k}"' for k in merge_keys])
+            join_condition.append(f'LEFT JOIN "{t}" ON {on_condition}') # LEFT JOIN "bid_info" on on_condition
+
+        final_sql = f"""
+            SELECT {all_select_cols}
+            FROM "{main_table_name}"
+            {" ".join(join_condition)}
+        """
+        df = self.query(final_sql)
+        if '投標開始日' in df.columns:
+            df['投標開始日'] = pd.to_datetime(df['投標開始日'])
+        return df
+
+
+
+    def diff_index(self, raw_table: str, target_table: str, key_cols: List[str],) -> Tuple[pd.DataFrame, pd.Index]:
+        """
+        1. 取得 raw_table 中尚未存到 target_table 的 key index。
+        2. 使用 SQL 直接比對，避免整張表載入記憶體。
         回傳：
           - raw_df：raw_table 的完整 DataFrame（供後續使用）
           - diff_index：以 key_cols 作為索引的 MultiIndex（tuple list）

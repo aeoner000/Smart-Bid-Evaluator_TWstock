@@ -8,6 +8,11 @@ root_path = Path(__file__).resolve().parent
 if str(root_path) not in sys.path:
     sys.path.insert(0, str(root_path))
 
+from src.utils.logger_config import init_logger
+init_logger()
+
+import logging
+logger = logging.getLogger(__name__)
 from src.crawlers import (
     AuctionCrawler, 
     FinancialCrawler, 
@@ -37,6 +42,7 @@ def main():
         "price":     ("興櫃股價資料", lambda: PriceCrawler()),
         "revenue":   ("歷史營收資料", lambda: RevenueCrawler()),
         "target":    ("目標變數",     lambda: TargetCrawler()),
+        # "feature": ("特徵工程", lambda: FeatureManager()), 
     }
 
     # 定義執行順序 (Auction 必須第一)
@@ -48,11 +54,11 @@ def main():
     elif args.task in crawlers_map:
         tasks = [args.task]
     else:
-        print(f" 錯誤：找不到任務 '{args.task}'")
-        print(f"ℹ 可用任務：{', '.join(execution_order)}")
+        logger.info(f" 錯誤：找不到任務 '{args.task}'")
+        logger.info(f"ℹ 可用任務：{', '.join(execution_order)}")
         return
 
-    print(f"🚀 開始執行流程，預計執行：{tasks}")
+    logger.info(f"🚀 開始執行流程，預計執行：{tasks}")
     start_time = time.time()
 
     for key in tasks:
@@ -68,10 +74,12 @@ def main():
             print(f"✅ [{key}] 執行完成")
         except Exception as e:
             print(f"❌ [{key}] 執行失敗: {e}")
-            # 如果是 auction 失敗，後續依賴它的爬蟲可能也會有問題，但這裡選擇繼續嘗試
+            if key == "auction":
+                logger.critical("🚨 基礎資料(Auction)執行失敗，終止後續流程！")
+                return
 
     total_time = time.time() - start_time
-    print(f"\n 流程結束，總耗時: {total_time:.2f} 秒")
+    logger.info(f"\n 流程結束，總耗時: {total_time:.2f} 秒")
 
 if __name__ == "__main__":
     main()

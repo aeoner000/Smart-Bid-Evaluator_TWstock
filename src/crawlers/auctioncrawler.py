@@ -16,7 +16,7 @@ if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
 # 引入設定與工具
-from src.utils.config_loader import cfg, DB_PATH, DB_CONNECT_KWARGS
+from src.utils.config_loader import cfg, DB_PATH, TEST_DB_PATH, DB_CONNECT_KWARGS
 from src.db_base.db_manager import IPO_DAO
 
 auction_cfg = cfg["crawlers"]["auction"]

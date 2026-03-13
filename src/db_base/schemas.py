@@ -1,14 +1,10 @@
 """
-Database schemas for Smart-Bid-Evaluator_TWstock
-
-This module defines the table schemas for all SQLite tables used in the project.
-Each table schema includes column names, data types, and constraints.
-
-Note: SQLite doesn't have dedicated DATE/DATETIME types - they are stored as TEXT.
+** 資料結構定義 **
+schemas.py 定義 SQLite 表格的結構，包含欄位名稱、格式、約束
+Note: SQLite 沒有時間格式，目前都以TEXT替代
 """
 
 from typing import Dict, List, Tuple
-
 
 # Table schema definition: (column_name, sqlite_type, constraints)
 TableSchema = List[Tuple[str, str, str]]
@@ -148,13 +144,74 @@ TABLE_SCHEMAS: Dict[str, TableSchema] = {
     ],
 
     "all_features": [
-        # Combined feature table for ML training
-        # This table combines features from all other tables
-        # Columns will be dynamically determined during feature engineering
+        # 主鍵
         ("證券代號", "TEXT", "NOT NULL"),
         ("投標開始日", "TEXT", "NOT NULL"),
-        # Feature columns will be added dynamically
-    ],
+        ("撥券日期(上市、上櫃日期)", "TEXT", "NOT NULL"),
+
+        # bid_info (競價拍賣基本資訊)
+        ("證券名稱", "TEXT", "NOT NULL"),
+        ("最低投標價格(元)", "REAL", ""),
+        ("最高投(得)標數量(張)", "INTEGER", ""),
+        ("取消競價拍賣(流標或取消)", "TEXT", ""),
+
+
+        # fin_stmts (財務報表特徵 - 基本面)
+        ("營收成長率", "REAL", ""),
+        ("本期淨利成長率", "REAL", ""),
+        ("每股盈餘成長率", "REAL", ""),
+        ("ROE", "REAL", ""),
+        ("ROE成長率", "REAL", ""),
+        ("ROA", "REAL", ""),
+        ("ROA成長率", "REAL", ""),
+        ("每股淨值", "REAL", ""),
+        ("每股淨值成長率", "REAL", ""),
+        ("負債比", "REAL", ""),
+        ("負債比成長率", "REAL", ""),
+        ("每股盈餘", "REAL", ""),
+
+        # revenue_info (營收詳細資訊)
+        ("近一月營收", "REAL", ""),
+        ("近一月營收年增率", "REAL", ""),
+        ("近一月營收月增率", "REAL", ""),
+        ("營收增長規律性_R2", "REAL", ""),
+        ("營收風險波動率_cv", "REAL", ""),
+        ("近五月成長次數比率", "REAL", ""),
+
+        # history_price_info (歷史價格與量能 - 技術面)
+        ("前一日平均成交價", "REAL", ""),
+        ("前十日內平均成交價", "REAL", ""),
+        ("前十日內漲幅", "REAL", ""),
+        ("前一日成交金額", "REAL", ""),
+        ("前十日內平均成交金額", "REAL", ""),
+        ("前一日最高成交價", "REAL", ""),
+        ("前一日最低成交價", "REAL", ""),
+        ("前一日成交筆數", "INTEGER", ""),
+        ("前一日成交股數", "INTEGER", ""),
+        ("前十日內平均成交筆數", "INTEGER", ""),
+        ("前十日內平均成交股數", "INTEGER", ""),
+
+        # all_market_info (市場籌碼與大盤環境)
+        ("外資平均增減", "REAL", ""),
+        ("投信平均增減", "REAL", ""),
+        ("自營商平均增減", "REAL", ""),
+        ("融資張數增減", "INTEGER", ""),
+        ("融券張數增減", "INTEGER", ""),
+        ("融資金額增減", "REAL", ""),
+        ("道瓊工業_10日漲幅(%)", "REAL", ""),
+        ("標普500_10日漲幅(%)", "REAL", ""),
+        ("那斯達克_10日漲幅(%)", "REAL", ""),
+        ("費城半導體_10日漲幅(%)", "REAL", ""),
+        ("大盤_10日漲幅(%)", "REAL", ""),
+        ("大盤_平均成交量", "REAL", ""),
+        ("櫃買_10日漲幅(%)", "REAL", ""),
+        ("櫃買_平均成交量", "REAL", ""),
+
+        # target_variable (模型訓練目標變數)
+        ("預估獲利率", "REAL", ""),
+        ("最低得標加價率", "REAL", ""),
+        ("加權平均加價率", "REAL", "")
+    ]
 }
 
 

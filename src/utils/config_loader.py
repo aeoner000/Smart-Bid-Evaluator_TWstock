@@ -22,7 +22,11 @@ _database = cfg.get("database", {})
 _paths = cfg.get("paths", {})
 _common = cfg.get("common", {})
 
+# 正式資料庫-->_database.get("db_path"-->優先由yaml抓路徑，否則用下方 "," 之後的路徑
 DB_PATH = Path(_database.get("db_path", "data/database/database.sqlite3"))
+# 測試資料庫
+TEST_DB_PATH = Path(_database.get("test_db_path", "data/database/database_test.sqlite3"))
+
 DATABASE_DIR = DB_PATH.parent
 DB_CONNECT_KWARGS = _database.get("connect", {})
 
