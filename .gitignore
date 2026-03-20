@@ -12,6 +12,7 @@ venv/
 env/
 .DS_Store
 
+json/gcp-auth.json
 data/raw_table/*.csv
 data/processed/*.csv
 

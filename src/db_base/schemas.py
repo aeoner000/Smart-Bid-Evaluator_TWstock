@@ -39,6 +39,7 @@ TABLE_SCHEMAS: Dict[str, TableSchema] = {
         ("承銷價格(元)", "REAL", ""),
         ("取消競價拍賣(流標或取消)", "TEXT", ""),
         ("update_time", "TEXT", ""),  # DATETIME stored as TEXT in SQLite
+        ("status", "TEXT", ""),       # no_list、all_complete
     ],
 
     "fin_stmts": [
@@ -153,8 +154,6 @@ TABLE_SCHEMAS: Dict[str, TableSchema] = {
         ("證券名稱", "TEXT", "NOT NULL"),
         ("最低投標價格(元)", "REAL", ""),
         ("最高投(得)標數量(張)", "INTEGER", ""),
-        ("取消競價拍賣(流標或取消)", "TEXT", ""),
-
 
         # fin_stmts (財務報表特徵 - 基本面)
         ("營收成長率", "REAL", ""),
@@ -210,7 +209,9 @@ TABLE_SCHEMAS: Dict[str, TableSchema] = {
         # target_variable (模型訓練目標變數)
         ("預估獲利率", "REAL", ""),
         ("最低得標加價率", "REAL", ""),
-        ("加權平均加價率", "REAL", "")
+        ("加權平均加價率", "REAL", ""),
+
+        ("status", "TEXT", ""), # no_list、all_complete
     ]
 }
 

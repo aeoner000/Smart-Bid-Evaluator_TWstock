@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 
 # --- 路徑處理 ---
-root_path = Path(__file__).resolve().parent.parent.parent
+root_path = Path(__file__).resolve().parents[2]
 if str(root_path) not in sys.path:
     sys.path.insert(0, str(root_path))
 

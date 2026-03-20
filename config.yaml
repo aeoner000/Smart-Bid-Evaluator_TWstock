@@ -2,7 +2,7 @@
 # This file is intended to replace hard-coded *_cfg.py constants.
 
 database:
-  # SQLite database location (relative to repo root)
+  # Add a type field to switch between databases
   db_path: "data/database/database.sqlite3"
   test_db_path: "data/database/test_database.sqlite3"  # test database
   # Optional SQLite connect options
@@ -10,11 +10,67 @@ database:
     timeout: 30
     check_same_thread: false
 
+paths:
+  skew_path: "src/models/saved_weights/skew_transformer.joblib"
+  weights_dir: "src/models/saved_weights"
+
 common:
   # Encoding for CSVs written by the project
   csv_encoding: "utf-8-sig"
   # Default User-Agent for web requests
   user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+ml_model_environment:
+  # 基礎環境配置
+  global_settings:
+    random_state: 42
+    test_size: 0.2
+
+  models:
+    # LightGBM: 專注於限制葉子數與加強正則化
+    lgbm:
+      static_params:
+        objective: "regression"
+        metric: "rmse"
+        verbosity: -1
+        random_state: 42
+      search_space:
+        learning_rate: { type: "float", low: 0.01, high: 0.05 }
+        num_leaves: { type: "int", low: 7, high: 15 }          # 關鍵：小樣本不能多
+        min_child_samples: { type: "int", low: 5, high: 20 }   # 防止單一葉子樣本太少
+        reg_alpha: { type: "float", low: 0.0, high: 10.0 }
+        reg_lambda: { type: "float", low: 0.0, high: 10.0 }
+
+    # XGBoost: 專注於樹深與隨機採樣（增加魯棒性）
+    xgb:
+      static_params:
+        objective: "reg:squarederror"
+        eval_metric: "rmse"
+        random_state: 42
+      search_space:
+        learning_rate: { type: "float", low: 0.01, high: 0.05 }
+        max_depth: { type: "int", low: 3, high: 5 }            # 關鍵：股票數據淺層樹才穩
+        subsample: { type: "float", low: 0.6, high: 0.9 }      # 樣本抽樣
+        colsample_bytree: { type: "float", low: 0.6, high: 0.9 } # 特徵抽樣
+        gamma: { type: "float", low: 0.0, high: 5.0 }          # 控制分裂門檻
+
+    # CatBoost: 專注於 L2 正則與樹深
+    cat:
+      static_params:
+        loss_function: "RMSE"
+        verbose: 0
+        random_seed: 42
+        allow_writing_files: false
+      search_space:
+        depth: { type: "int", low: 3, high: 6 }                # CatBoost 深度通常比 XGB 深一點點沒關係
+        learning_rate: { type: "float", low: 0.01, high: 0.05 }
+        l2_leaf_reg: { type: "float", low: 1.0, high: 10.0 }   # 關鍵：CatBoost 的 L2 強度非常重要
+        iterations: { type: "int", low: 200, high: 600 }
+  # 目標清單
+  targets:
+    stock_return:
+      model_list: ["lgbm", "xgb", "cat"]
+
 
 crawlers:
   auction:
@@ -107,7 +163,7 @@ crawlers:
       - "融資金額增減"
       - "道瓊工業_10日漲幅(%)"
       - "標普500_10日漲幅(%)"
-      - "那斯達克_10日漲幅(%)"
+      - "那斯達క్_10日漲幅(%)"
       - "費城半導體_10日漲幅(%)"
       - "大盤_10日漲幅(%)"
       - "大盤_平均成交量"
@@ -120,7 +176,7 @@ crawlers:
       - "^SOX"
     usa_name_map:
       "^GSPC": "標普500_10日漲幅(%)"
-      "^IXIC": "那斯達克_10日漲幅(%)"
+      "^IXIC": "那斯達క్_10日漲幅(%)"
       "^DJI": "道瓊工業_10日漲幅(%)"
       "^SOX": "費城半導體_10日漲幅(%)"
 
@@ -149,10 +205,10 @@ crawlers:
       - "營收風險波動率_cv"
       - "近五月成長次數比率"
     headers:
-      - "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-      - "Referer": "https://mopsov.twse.com.tw/mops/web/t05st10_ifrs"
-      - "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
-      - "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7"
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      "Referer": "https://mopsov.twse.com.tw/mops/web/t05st10_ifrs"
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+      "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7"
 
   target:
     feature_cols:
@@ -178,7 +234,7 @@ feature_engineer:
       - "撥券日期(上市、上櫃日期)"
       - "最低投標價格(元)"
       - "最高投(得)標數量(張)"
-      - "取消競價拍賣(流標或取消)"
+      - "status"
 
     # 財務報表特徵 (基本面)
     fin_stmts:
@@ -236,7 +292,7 @@ feature_engineer:
       - "融資金額增減"
       - "道瓊工業_10日漲幅(%)"
       - "標普500_10日漲幅(%)"
-      - "那斯達克_10日漲幅(%)"
+      - "那斯達క్_10日漲幅(%)"
       - "費城半導體_10日漲幅(%)"
       - "大盤_10日漲幅(%)"
       - "大盤_平均成交量"
@@ -250,4 +306,76 @@ feature_engineer:
       - "預估獲利率"
       - "最低得標加價率"
       - "加權平均加價率"
+      
+  feature_cols:
+    id_cols:
+      - 證券代號
+      - 投標開始日
+    # 1. 目標變數 (Y)
+    target_variables:
+      - 加權平均加價率
+      - 最低得標加價率
+      - 預估獲利率
+    # 英文名稱
+    target_variables_map:
+      加權平均加價率: "input_target_weighted_avg_markup_rate"
+      最低得標加價率: "input_target_min_winning_markup_rate"
+      預估獲利率: "input_target_est_profit_margin"
 
+    # 2. 預測特徵 (X)
+    x_features:
+      - 最低投標價格(元)
+      - 最高投(得)標數量(張)
+      - 營收成長率
+      - 本期淨利成長率
+      - 每股盈餘成長率
+      - ROE
+      - ROE成長率
+      - ROA
+      - ROA成長率
+      - 每股淨值
+      - 每股淨值成長率
+      - 負債比
+      - 負債比成長率
+      - 每股盈餘
+      - 近一月營收
+      - 近一月營收年增率
+      - 近一月營收月增率
+      - 營收增長規律性_R2
+      - 營收風險波動率_cv
+      - 近五月成長次數比率
+      - 前一日平均成交價
+      - 前十日內平均成交價
+      - 前十日內漲幅
+      - 前一日成交金額
+      - 前十日內平均成交金額
+      - 前一日最高成交價
+      - 前一日最低成交價
+      - 前一日成交筆數
+      - 前一日成交股數
+      - 前十日內平均成交筆數
+      - 前十日內平均成交股數
+      - 外資平均增減
+      - 投信平均增減
+      - 自營商平均增減
+      - 融資張數增減
+      - 融券張數增減
+      - 融資金額增減
+      - 道瓊工業_10日漲幅(%)
+      - 標普500_10日漲幅(%)
+      - 那斯達క్_10日漲幅(%)
+      - 費城半導體_10日漲幅(%)
+      - 大盤_10日漲幅(%)
+      - 大盤_平均成交量
+      - 櫃買_10日漲幅(%)
+      - 櫃買_平均成交量
+      - fin_stmts_missing
+      - revenue_info_missing
+      - history_price_info_missing
+      - is_ky
+      - is_Q4
+      - days_to_listing
+      - 融資比
+      - 法人比
+      - Market_Heat
+      - ROE_Quality

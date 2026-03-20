@@ -5,7 +5,7 @@ import pandas as pd
 import requests
 
 # --- 路徑處理 ---
-root_path = Path(__file__).resolve().parent.parent.parent
+root_path = Path(__file__).resolve().parents[2]
 if str(root_path) not in sys.path:
     sys.path.insert(0, str(root_path))
 
@@ -16,8 +16,7 @@ from src.utils.revenue_utils import get_revenue_data, calculate_revenue_features
 
 # --- 設定 ---
 revenue_cfg = cfg["crawlers"]["revenue"]
-HEADERS_LIST = revenue_cfg["headers"]
-HEADERS = {k: v for d in HEADERS_LIST for k, v in d.items()}
+HEADERS = revenue_cfg["headers"]
 
 class RevenueCrawler(BaseCrawler):
     def __init__(self):
@@ -39,17 +38,25 @@ class RevenueCrawler(BaseCrawler):
         """
         try:
             # 計算基準月份 (若 10 號前則看前前月)
-            y, m, d = start_date.year, start_date.month, start_date.day
-            if d <= 10:
-                m -= 1
-                if m == 0: m, y = 12, y - 1
+            base_date = pd.Timestamp(start_date).normalize()
+
+            # 核心邏輯：營收落後一個月，且 10 號前再多退一個月
+            if base_date.day <= 10:
+                # 10 號前：從「前前個月」開始抓 (退 2 個月)
+                start_point = base_date - pd.DateOffset(months=2)
+            else:
+                # 10 號後：從「上個月」開始抓 (退 1 個月)
+                start_point = base_date - pd.DateOffset(months=1)
 
             # 抓取連續 5 個月
             monthly_results = []
             for i in range(5):
-                total_m = (y * 12 + (m - 1)) - i
-                cur_y, cur_m = total_m // 12, (total_m % 12) + 1
+                # 直接用 DateOffset 減去 i 個月，完全不用寫數學公式
+                target_date = start_point - pd.DateOffset(months=i)
                 
+                cur_y = target_date.year
+                cur_m = target_date.month
+
                 # get_revenue_data 內部已包含重試機制
                 this_m, last_y, yoy = get_revenue_data(code, cur_y, cur_m, self.session)
                 

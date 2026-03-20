@@ -19,6 +19,7 @@
       pkgs.openssl          # 網路請求或加密套件常需要的庫
       pkgs.zlib             # 壓縮相關套件需要的庫
       pkgs.tree
+      pkgs.sqlite
   ];
 
   # Sets environment variables in the workspace

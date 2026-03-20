@@ -1,0 +1,28 @@
+1. 專案執行流程 -->
+    (1) 數據爬取 (透過 main.py --crawler <crawler_name>):
+        a. 執行 auction crawler: 抓取競拍基本資訊 (bid_info)，此為系統起點。
+        b. 系統會自動比對 bid_info 中的資料，觸發以下爬蟲抓取相對應的特徵:
+           - financial crawler: 抓取公司財報。
+           - market crawler: 抓取市場關鍵指標。
+           - price crawler: 抓取歷史股價。
+           - revenue crawler: 抓取公司月營收。
+        c. 當 status=no_list 的公司上市後，執行 target crawler 抓取蜜月行情表現 (目標變數)，並將 status 更新為 all_complete。
+    (2) 數據前處理與特徵工程 (由 main.py 自動調度):
+        a. 執行 feature_engineer.py: 將所有爬取到的資料整合成一個完整的特徵大表。
+        b. 執行 feature_selector.py: 根據特徵重要性篩選出最終用於訓練的特徵。
+        c. 思考:存成80%、20%各三個預測目標,共6張表? 另外特徵選擇及偏態轉換都只用80%去跑
+    (3) 模型訓練 (透過 train.py):
+        0. 參數優化時只用80%的X去跑
+        a. 觸發條件: 當 status=all_complete 的樣本數，與上次模型訓練時的樣本數差距 >= 30 筆時。
+        b. 執行 boost_automl.py 進行 AutoML 模型重訓。
+    (4) 模型預測 (透過 predict.py):
+        a. 預測對象: 針對特徵大表中 status=no_list 的資料進行預測。
+        b. 執行時機: 於確認無需訓練或模型重訓完成後。
+
+2026-03-18 16:34:10,485 - ERROR - 執行 SQL 失敗: Incorrect number of bindings supplied. The current statement uses 3, and there are 5 supplied.
+SQL: UPDATE "bid_info" SET "status" = ? WHERE "證券代號" = ? AND "投標開始日" = ?
+2026-03-18 16:34:10,485 - INFO - 成功將 5 筆任務狀態更新為 'features_complete'。
+
+# 確認feature_complete的設置條件
+# 再執行一次爬蟲
+/home/user/smart-bid-evaluator/venv/bin/activate

@@ -34,3 +34,8 @@ RAW_TABLE_DIR = Path(_paths.get("raw_table_dir", "data/raw_table"))
 
 CSV_ENCODING = _common.get("csv_encoding", "utf-8-sig")
 USER_AGENT = _common.get("user_agent")
+
+SKEW_PATH = Path(_paths.get("skew_path", "src/models/saved_weights/skew_transformer.joblib"))
+SELECT_FEATURE_PATH = Path(_paths.get("select_feature", "src/models/saved_weights/selected_features.joblib"))
+ 
+SAVE_DIR = Path(_paths.get("weights_dir", "src/models/saved_weights"))
