@@ -8,41 +8,39 @@
 
 整個流程由 `main.py` 統一調度，其核心是**循序執行的工作流**。根據命令列參數，`main.py` 會依序執行爬蟲、資料處理、模型訓練與預測等階段，確保每個階段都在前一階段成功完成的基礎上進行。
 
+```mermaid
 graph TD
-    A[啟動 main.py] --> B(執行爬蟲階段 crawl)
-    
+    A[啟動 main.py]
+
     subgraph "爬蟲階段 (Crawl Stage)"
         B1[AuctionCrawler: 更新任務清單]
-        B2[FeatureCrawlers: 依任務補齊特徵]
-        B3[TargetCrawler: 抓取競拍結果]
-        B1 --> B2 --> B3
+        B1 --> B2[FeatureCrawlers: 依任務補齊特徵]
+        B2 --> B3[TargetCrawler: 抓取競拍結果]
     end
 
-    B --> C(執行資料處理階段 process)
-    
     subgraph "資料處理階段 (Process Stage)"
         C1[FeatureEngineer: 資料清理與特徵工程]
     end
 
-    C --> D{判斷是否滿足訓練條件}
-    
     subgraph "模型訓練階段 (Train Stage)"
-        D2[run_training_pipeline: 訓練並儲存新模型]
-        D3[跳過訓練]
+        D1{判斷是否滿足訓練條件}
+        D1 -- 若滿足 --> D2[訓練並儲存新模型]
+        D1 -- 若不滿足 --> D3[跳過訓練]
     end
-
-    D -- 若滿足 --> D2
-    D -- 若不滿足 --> D3
-
-    D2 --> E(執行預測階段 predict)
-    D3 --> E
     
     subgraph "預測階段 (Predict Stage)"
         E1[Predictor: 載入最新模型產生預測]
     end
 
-    E --> E1
-    E1 --> F[結束]
+    F[結束]
+
+    A --> B1
+    B3 --> C1
+    C1 --> D1
+    D2 --> E1
+    D3 --> E1
+    E1 --> F
+```
 
 ### 異常處理與日誌
 
