@@ -10,7 +10,7 @@
 
 ```mermaid
 graph TD
-    A[啟動 main.py] --> B[執行爬蟲階段 (crawl)];
+    A[啟動 main.py] --> B[執行爬蟲階段 (crawl)]
     
     subgraph "爬蟲階段 (Crawl Stage)"
         B1[AuctionCrawler: 更新任務清單]
@@ -18,24 +18,24 @@ graph TD
         B2 --> B3[TargetCrawler: 抓取競拍結果]
     end
 
-    B --> C[執行資料處理階段 (process)];
+    B --> C[執行資料處理階段 (process)]
     subgraph "資料處理階段 (Process Stage)"
         C1[FeatureEngineer: 資料清理與特徵工程]
     end
 
-    C --> D[執行模型訓練階段 (train)];
+    C --> D[執行模型訓練階段 (train)]
     subgraph "模型訓練階段 (Train Stage)"
-        D1[判斷是否滿足訓練條件]
+        D1{判斷是否滿足訓練條件}
         D1 -- 若滿足 --> D2[run_training_pipeline: 訓練並儲存新模型]
         D1 -- 若不滿足 --> D3[跳過訓練]
     end
 
-    D --> E[執行預測階段 (predict)];
+    D --> E[執行預測階段 (predict)]
     subgraph "預測階段 (Predict Stage)"
         E1[Predictor: 載入最新模型產生預測]
     end
 
-    E --> F[結束];
+    E --> F[結束]
 ```
 
 ### 異常處理與日誌
