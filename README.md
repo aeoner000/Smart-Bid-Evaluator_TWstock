@@ -1,176 +1,121 @@
-# 台股競拍價格預測系統
+# AI 競拍大師 - 系統技術文件
 
-**專案願景:** 運用數據工程與機器學習技術，精準預測台股競拍價格，為投資者提供數據驅動的決策優勢。
+一個全自動化系統，用於擷取台灣股票競拍數據、整合多來源資料進行特徵工程、訓練預測模型，並透過網頁應用提供預測服務。整個機器學習維運（MLOps）生命週期在 Google Cloud Platform (GCP) 生態系中進行管理。
 
 ---
 
-## 主要工作流程
+## 系統架構與數據流程
 
-整個流程由 `main.py` 統一調度，其核心是**循序執行的工作流**。根據命令列參數，`main.py` 會依序執行爬蟲、資料處理、模型訓練與預測等階段，確保每個階段都在前一階段成功完成的基礎上進行。
+本系統架構為一個線性的四階段 MLOps 管線。每個階段透過儲存在 BigQuery 和 GCS 中的數據狀態進行解耦，允許獨立執行與維護。
+
+### 系統高階流程圖
 
 ```mermaid
 graph TD
-    A[啟動 main.py]
-
-    subgraph "爬蟲階段 (Crawl Stage)"
-        B1[AuctionCrawler: 更新任務清單]
-        B1 --> B2[FeatureCrawlers: 依任務補齊特徵]
-        B2 --> B3[TargetCrawler: 抓取競拍結果]
+    A[外部數據源] --> B(階段一：數據擷取);
+    B -- 原始數據表 --> C[[fa:fa-database BigQuery]];
+    C --> D(階段二：特徵工程);
+    D -- 處理後特徵表 --> C;
+    C --> E(階段三：模型訓練);
+    E -- 序列化模型 --> F{{fa:fa-hdd GCS}};
+    subgraph 應用服務層
+        G(Streamlit 應用程式) -- 載入模型 --> F;
+        G -- 載入特徵與數據 --> C;
+        H[fa:fa-user 使用者] -- 互動 --> G;
+        G -- 顯示預測結果 --> H;
     end
-
-    subgraph "資料處理階段 (Process Stage)"
-        C1[FeatureEngineer: 資料清理與特徵工程]
-    end
-
-    subgraph "模型訓練階段 (Train Stage)"
-        D1{判斷是否滿足訓練條件}
-        D1 -- 若滿足 --> D2[訓練並儲存新模型]
-        D1 -- 若不滿足 --> D3[跳過訓練]
-    end
-    
-    subgraph "預測階段 (Predict Stage)"
-        E1[Predictor: 載入最新模型產生預測]
-    end
-
-    F[結束]
-
-    A --> B1
-    B3 --> C1
-    C1 --> D1
-    D2 --> E1
-    D3 --> E1
-    E1 --> F
 ```
 
-### 異常處理與日誌
+### 處理流程階段
 
-- **階段級錯誤處理:** 在爬蟲階段，包含一個穩健的資料回滾機制。若任一特徵爬蟲失敗，系統將自動刪除該批次中已部分下載的資料，以確保資料的完整性。
-- **日誌記錄:** 應用程式使用詳細的日誌記錄每個階段的關鍵步驟，使得對管線的監控和偵錯變得容易。
+#### 1. 數據擷取 (Data Ingestion)
+
+*   **目標：** 從分散的金融數據源收集並儲存原始數據。
+*   **流程：**
+    1.  由一個主腳本調用各個獨立的爬蟲模組。
+    2.  每個模組針對一個特定的數據實體（例如：競拍資訊、財務報表、市場價格、月營收）。
+    3.  透過查詢 BigQuery 中已存在的數據（基於股票代號與日期）來執行冪等性 (Idempotency) 檢查。
+    4.  若數據為新的，則向外部數據源（TWSE、MOPS、FinMind）發起 HTTP 請求或 API 呼叫。
+    5.  將原始響應（HTML/JSON）解析為 Pandas DataFrame。
+    6.  該 DataFrame 被傳遞至數據存取物件（DAO），由其將未經修改的數據寫入 BigQuery 中對應的原始數據表。數據僅作附加，不覆寫。
+
+#### 2. 特徵工程 (Feature Engineering)
+
+*   **目標：** 將多個原始數據表轉換為單一、寬格式、可供模型使用的特徵矩陣。
+*   **流程：**
+    1.  流程被觸發後，從 BigQuery 讀取所有需要的原始數據表至記憶體中，成為多個 DataFrame。
+    2.  以 `bid_info`（競拍資訊）表為主表，將所有其他表（財務、市場數據等）基於股票代號和相關時間鍵進行左連接 (Left Join)。
+    3.  透過跨欄位計算，衍生出大量的特徵（例如：財務比率、成長率、移動平均線）。具體的特徵在一個中央配置文件中定義。
+    4.  對具備偏態分佈的數值欄位應用對數或 Box-Cox 轉換，以校正其分佈。
+    5.  對連接或計算過程中產生的缺失值（`NaN`, `inf`）採用預定義策略（例如：填補 0、中位數或一個常數）進行插補。
+    6.  最終生成的統一寬表 DataFrame 被寫回 BigQuery，成為一個單獨的「已處理特徵」表。
+
+#### 3. 模型訓練 (Model Training)
+
+*   **目標：** 在最新的可用特徵上訓練一個預測模型，並將其持久化以供後續推理使用。
+*   **流程：**
+    1.  從 BigQuery 載入「已處理特徵」表。
+    2.  基於時間順序鍵（例如：開標日期）將數據集分割為訓練集和驗證集，以防止數據洩漏並模擬真實世界的預測場景。
+    3.  實例化一個梯度提升模型（例如：XGBoost），其超參數在配置文件中定義。
+    4.  在訓練集上呼叫 `.fit()` 方法來訓練模型。
+    5.  使用 `joblib` 將訓練好的模型物件進行序列化。
+    6.  生成的二進制檔案透過儲存處理器上傳至 Google Cloud Storage (GCS) 的指定位置，通常會覆寫一個名為 `latest_model.joblib` 的檔案，以確保應用服務層總能獲取最新版本的模型。
+
+#### 4. 推理與服務 (Inference & Serving)
+
+*   **目標：** 提供一個互動式網頁介面，供使用者獲取進行中競拍事件的即時預測。
+*   **流程：**
+    1.  Streamlit 應用程式啟動。在首次運行時，它會連接到 GCP。
+    2.  從 GCS 下載 `latest_model.joblib` 並將其反序列化到記憶體中。這個模型物件會被快取以供應用程式的整個生命週期使用。
+    3.  從 BigQuery 查詢應用頁面所需的數據（例如：目前競拍列表、歷史數據、以及用於預測的預計算特徵）並進行快取。
+    4.  當使用者從 UI 中選擇一個特定的股票時，應用程式從快取的數據中檢索其對應的特徵向量。
+    5.  此向量被傳遞至記憶體中模型的 `.predict()` 方法。
+    6.  最終的預測結果（例如：預測得標價）經過格式化後，顯示在使用者的螢幕上。
 
 ---
 
-## 核心功能與架構優勢
+## 技術棧 (Technology Stack)
 
-- **自動化ETL:** 擁有從資料擷取(Crawl)、轉換(Process)到載入(Load to Model)的完整自動化流程。
-- **多維度特徵整合:** 整合財務報表、歷史股價、市場數據和營收報告等多維度特徵。
-- **智慧訓練觸發:** 僅在收集到足夠新資料時才觸發模型訓練，以優化計算資源。
-- **模組化與可擴充性:** 專案採高內聚、低耦合的模組化結構。各模組（爬蟲、清理、訓練）之間透過資料庫進行解耦，互不直接依賴，為未來的擴展打下了堅實的基礎。
-
----
-
-## 未來擴展方向
-
-本專案的模組化架構為系統未來的發展提供了巨大的靈活性。主要的擴展方向包括：
-
-1.  **水平擴展與雲端部署:** 
-    - **容器化:** 將每個執行階段（`crawl`, `process`, `train`）打包成獨立的 Docker 容器。
-    - **工作流編排:** 部署到 Kubernetes，並使用 Airflow 或 Argo Workflows 等工具進行排程，實現更複雜的依賴管理與自動化重試機制。
-
-2.  **效能優化:**
-    - **分散式計算:** 當資料量達到億級時，可將 Pandas 資料處理邏輯遷移至 Dask 或 Spark，以利用分散式計算的能力，突破單一節點的記憶體瓶頸。
-
-3.  **模型與特徵實驗:**
-    - **快速迭代:** 資料科學家可以專注於 `src/processors` 和 `src/models` 目錄，快速實驗新的特徵工程方法或不同的預測模型，而無需擔心影響數據的獲取（爬蟲）流程。
+| 類別 | 技術 |
+| :--- | :--- |
+| **語言** | Python 3.9+ |
+| **數據處理** | Pandas |
+| **機器學習** | Scikit-learn, XGBoost, LightGBM |
+| **網頁框架** | Streamlit |
+| **雲端資料庫** | Google BigQuery |
+| **雲端儲存** | Google Cloud Storage (GCS) |
+| **核心平台** | Google Cloud Platform (GCP) |
 
 ---
 
-## 技術棧
+## 操作指南
 
-- **Python 3.9+**
-- **核心函式庫:**
-    - **Pandas:** 用於資料操作與分析。
-    - **google-cloud-bigquery:** 用於與 BigQuery 資料庫互動。
-    - **scikit-learn, XGBoost, LightGBM:** 用於模型訓練與預測。
-- **資料庫:** Google BigQuery
+### 1. 環境配置
+在專案根目錄下建立 `.env` 檔案，並填入您的 GCP 專案 ID 與憑證路徑。
+```
+PROJECT_ID="your-gcp-project-id"
+GOOGLE_APPLICATION_CREDENTIALS="path/to/your/credentials.json"
+```
 
----
-
-## 快速上手
-
-### 1. 環境變數
-
-在專案根目錄下建立 `.env` 檔案，並填入您的 BigQuery 憑證。
-
-### 2. 安裝
-
+### 2. 安裝依賴
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. 執行
-
-可執行整個管線或單獨階段。
-
+### 3. 執行管線 (可選)
+手動執行完整的數據管線：
 ```bash
-# 執行整個管線 (依序 crawl -> process -> train -> predict)
-python main.py
+# 階段一：擷取數據
+python -m src.crawlers.main
 
-# 僅執行爬蟲和資料處理階段
-python main.py crawl process
+# 階段二：進行特徵工程
+python -m src.processors.main
+
+# 階段三：訓練模型
+python -m src.models.train
 ```
 
----
-
-## 檔案結構
-
-```
-.
-├── ARCHITECTURE.md
-├── README.md
-├── config.yaml
-├── main.py
-├── requirements.txt
-├── src
-│   ├── __init__.py
-│   ├── crawlers
-│   │   ├── __init__.py
-│   │   ├── auctioncrawler.py
-│   │   ├── base_crawler.py
-│   │   ├── financialcrawler.py
-│   │   ├── marketcrawler.py
-│   │   ├── pricecrawler.py
-│   │   ├── revenuecrawler.py
-│   │   └── targetcrawler.py
-│   ├── db_base
-│   │   ├── __init__.py
-│   │   ├── bigquery_dao.py
-│   │   ├── bigquery_schemas.py
-│   │   ├── db_manager.py
-│   │   ├── schemas.py
-│   │   └── sqlite_dao.py
-│   ├── models
-│   │   ├── __init__.py
-│   │   └── train_model
-│   │       ├── __init__.py
-│   │       ├── boost_automl.py
-│   │       ├── predict.py
-│   │       └── train.py
-│   ├── processors
-│   │   ├── __init__.py
-│   │   ├── feature_engineer.py
-│   │   ├── feature_selector.py
-│   │   └── skew_transformer.py
-│   └── utils
-│       ├── __init__.py
-│       ├── config_loader.py
-│       ├── feature_utils.py
-│       ├── financial_format_utils.py
-│       ├── finmind_manager.py
-│       ├── logger_config.py
-│       ├── market_utils.py
-│       ├── price_utils.py
-│       ├── revenue_utils.py
-│       ├── storage_handler.py
-│       └── target_utils.py
-├── data
-│   └── example
-│       ├── all_feature_table.csv
-│       ├── all_market_info.csv
-│       ├── bid_info.csv
-│       ├── fin_stmts.csv
-│       ├── history_price_info.csv
-│       ├── revenue_info.csv
-│       └── target_variable.csv
-└── json
-    └── training_metadata.json
+### 4. 啟動應用程式
+```bash
+streamlit run Home.py
 ```

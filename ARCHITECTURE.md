@@ -1,105 +1,134 @@
-# 架構設計文檔 (Architecture.md)
+# 系統架構與數據流程 (ARCHITECTURE)
 
-**版本：** 1.1
-**作者：** 系統架構師
-
----
-
-## 1. 總覽與設計哲學
-
-本文件旨在闡述「台股競拍價格預測系統」的內部技術架構、資料處理流程與設計決策。我們的核心設計哲學是建立一個**高內聚、低耦合**的模組化系統。每個模組（爬蟲、清理、訓練、預測）都應能獨立運作與測試，同時透過清晰的介面（資料庫中的表）進行協作。此設計旨在最大化系統的**可維護性**、**可擴展性**與**可重現性**。
+本文檔使用純技術語言，描述系統的目錄結構、數據流、處理邏輯與條件分支。
 
 ---
 
-## 2. 資料清理管道 (Data Cleaning Pipeline)
+## 1. 目錄結構 (Directory Structure)
 
-資料清理是模型成功的基石。此管道的唯一職責是將從多個來源爬取、結構各異的原始資料（Raw Data），轉化為一個乾淨、寬格式、特徵豐富且可直接用於模型訓練的「單一事實表」(`all_features`)。
-
-此流程由 `src/processors/feature_engineer.py` 模組負責，其設計遵循了經典的 ETL（擷取、轉換、載入）模式，但在實踐中，我們採用了更現代的「ELT-in-code」方法。
-
-### 2.1 資料流轉圖 (文字說明)
-
-本節詳細描述資料從原始、零散的狀態，一步步被加工成精煉、可用於模型的標準化資料集的完整過程。
-
-1.  **啟動與資料讀取：**
-    *   流程的起點是 `FeatureEngineer` (特徵工程師) 模組。
-    *   它首先會向我們的資料庫 (BigQuery) 發出請求，讀取所有在爬蟲階段收集到的「原始資料表」。這包括了核心的 `bid_info` (競拍基本資訊)，以及如 `history_price` (歷史股價)、`fin_stmts` (財務報表) 等十幾張各自獨立的附屬資訊表。
-
-2.  **記憶體內資料合併 (`_combine_features_in_pandas`):**
-    *   與其讓資料庫執行多重且複雜的 JOIN 操作，我們選擇將所有原始表讀取到程式的記憶體中，使用 Pandas 的 `merge` 功能進行合併。
-    *   **處理流程：** 以 `bid_info` 為主表，將其他特徵表透過「證券代號」和「投標開始日」作為共同鑰匙，以 `left join` 的方式一一合併進來。
-    *   **結果：** 這個步驟會產出一個非常寬的 `DataFrame`，它整合了單一競拍案件所有維度的原始特徵。
-
-3.  **鏈式資料清理與特徵擴增 (`.pipe()`):**
-    *   上一步產出的寬表會被送入一個由 `.pipe()` 串接起來的標準化處理流水線。資料會依序通過以下函數處理：
-        *   `set_type`: 確保所有欄位的資料型態正確。
-        *   `fill_nan` / `handle_missing_data`: 根據預設規則填補缺失值。
-        *   `add_is_miss`: 為那些原本有缺失的欄位，額外新增一個「是否缺失」的標記欄位。
-        *   `add_new_feature`: 根據領域知識，創造新的衍生特徵，例如計算 20 日均線、本益比等。
-    *   **結果：** 經過這條流水線，我們得到一個乾淨、格式統一且特徵更豐富的 `all_features` 表，並將它存回資料庫作為一個重要的「檢查點」。
-
-4.  **偏態轉換與特徵選擇：**
-    *   接著，系統會讀取 `all_features` 表，並為**每一個我們想要預測的目標**（例如「承銷價」）獨立進行以下操作：
-        *   **`SkewTransformer` (偏態轉換器):** 學習並執行資料轉換，使其分佈更接近常態，並記錄轉換方法。
-        *   **`FeatureSelector` (特徵選擇器):** 從數百個特徵中，為當前的預測目標，挑選出最具預測力的 30 個特徵，並記錄此特徵列表。
-
-5.  **產出最終模型輸入表與轉換器物件：**
-    *   **`CleanDB` (清理後資料表):** 系統會使用上一步選出的「最佳特徵組合」和「偏態轉換方法」，對應用的數據進行處理，最終產出名為 `Train_*`, `Test_*`, `Predict_*` 的輕量化資料表。
-    *   **`Artifacts` (轉換器物件):** 上一步驟中學到的「偏態轉換方法」和「最佳特徵組合清單」，會被序列化成 `.joblib` 檔案並儲存起來，確保預測時能執行與訓練時完全一致的資料轉換。
-
-### 2.2 清理邏輯與衍生特徵詳解
-
-- **資料合併 (`_combine_features_in_pandas`)**
-    - **設計意圖:** 相較於在資料庫中執行複雜的 `JOIN`，將此邏輯移至應用層有三大優勢：
-        1.  **降低資料庫負載**
-        2.  **提升開發靈活性與可讀性**
-        3.  **在中等規模資料下更具效能**
-
-- **缺失值處理 (`fill_nan`, `add_is_miss`)**
-    - **設計意圖:** 直接補值會丟失「資料是否缺失」這一重要資訊。`is_miss` 特徵將此資訊明確地提供給模型，因為在某些情境下，缺失本身就是一個強預測信號。
-
-- **衍生特徵工程 (`add_new_feature`)**
-    - **設計意圖:** 將領域知識（Domain Knowledge）編碼到資料中，幫助模型學習更複雜的非線性關係，例如計算移動平均線、價格動量與財務比率。
-
-- **偏態資料轉換 (`SkewTransformer`)**
-    - **設計意圖:** 金融資料普遍呈現偏態分佈。對資料進行脫偏處理可以提高許多模型的穩定性和預測能力。我們為每個目標變數獨立儲存其對應的轉換器，是確保預測結果能被正確還原的關鍵設計。
-
-- **特徵選擇 (`FeatureSelector`)**
-    - **設計意圖:** 我們假設預測不同目標（如「承銷價」和「市價」）所需的最佳特徵組合是不同的。這種「客製化」的特徵選擇流程，旨在為每個預測目標最大化信噪比，並有效防止過擬合。
-
-### 2.3 資料庫 Schema
-
-- **原始表 (Raw Tables):** 爬蟲的直接輸出，結構各異，保留原始結構。
-- **中間表 (`all_features`):** 寬表，特徵工程的「檢查點」，建模的「單一事實表」。
-- **模型輸入表 (`Train_*`, `Test_*`, `Predict_*`):** 最終餵給模型的表，欄位是動態的，僅包含對應目標經過特徵選擇後的特徵。
+```
+. (root)
+├── src/                # 核心後端邏輯
+│   ├── crawlers/       # 數據採集模組 (數據生產者)
+│   │   ├── main.py     # 爬蟲總執行入口
+│   │   └── *.py        # 各個獨立的爬蟲實作
+│   ├── db_base/        # 數據存取層 (DAO - Data Access Object)
+│   │   ├── bigquery_dao.py # 唯一與 BigQuery 互動的介面
+│   │   └── storage_handler.py # 唯一與 GCS 互動的介面
+│   ├── models/         # 機器學習模型模組
+│   │   └── train.py    # 模型訓練腳本
+│   ├── processors/     # 數據處理模組
+│   │   └── feature_engineer.py # 特徵工程核心腳本
+│   └── utils/          # 共用工具函式
+├── pages/              # Streamlit 子頁面
+│   ├── 01_predict_view.py # AI 預測頁
+│   └── 02_history.py      # 歷史數據頁
+├── streamlit_unit/     # Streamlit 前端共用元件
+│   ├── query_func.py   # 專責向 DAO 請求數據的函式
+│   └── mappings.py     # 欄位中英文對應表
+├── Home.py             # Streamlit 應用主入口
+├── config.yaml         # 全局配置文件 (定義特徵、參數等)
+├── requirements.txt    # Python 依賴列表
+└── ARCHITECTURE.md     # 本文件
+```
 
 ---
 
-## 3. 模組化設計與擴展性
+## 2. 數據與邏輯流程 (Data & Logic Flow)
 
-`main.py` 的設計是系統解耦的核心。
+系統為事件驅動的線性流程，數據在 Google Cloud Platform (GCP) 內流動，由 DAO 層 (`bigquery_dao.py`, `storage_handler.py`) 統一管理所有 I/O 操作。
 
-- **職責分離:** `main.py` 本身不包含任何業務邏輯，僅作為指揮官，透過命令列參數調度不同模組。
-- **介面導向:** 模組之間唯一的溝通方式是透過資料庫中的資料表。例如，`crawl` 階段的輸出是 `process` 階段的輸入。
+### **Phase 1: 數據採集 (Ingestion)**
 
-**這種設計如何提升擴展性？**
+1.  **觸發**: 執行 `src.crawlers.main`。
+2.  **前置檢查**: `main.py` 協同各爬蟲模組，針對每個目標（如 `bid_info`, `financial_statement`），首先會向 BigQuery 查詢已存在的數據與最新日期。
+3.  **條件分支**: 
+    *   **If** 本次採集目標的標的與日期已存在於 BigQuery 中 -> **跳過 (SKIP)** 該次請求，避免重複寫入。
+    *   **Else** -> **執行 (EXECUTE)** 採集。
+4.  **執行**: 爬蟲透過 `requests` 或直接的 API Call 獲取外部數據源 (TWSE, MOPS, FinMind) 的原始數據 (JSON/HTML)，並在記憶體中將其處理為 Pandas DataFrame。
+5.  **持久化**: 該 DataFrame 被傳遞給 `bigquery_dao.load_data()`。DAO 根據傳入的表格名稱，將 DataFrame 寫入 BigQuery 中對應的 `raw_*` 表格。此處不進行任何業務邏輯的轉換，僅做原始數據的鏡像儲存。
 
-1.  **水平擴展:** 每個階段都可以被容器化（例如 Docker）並獨立部署。當爬蟲任務繁重時，我們可以只增加爬蟲節點的數量。
-2.  **非同步執行:** 可以將 `main.py` 的階段調度整合到 Airflow 或 Argo Workflows 等工作流引擎中，實現更複雜的自動化排程。
-3.  **易於替換:** 只要新模組遵守以資料庫為介面的原則，就能輕易替換系統的任一部分（例如用 Rust 爬蟲取代 Python 爬蟲）。
+### **Phase 2: 特徵工程 (Processing)**
+
+1.  **觸發**: 執行 `src.processors.feature_engineer.py`。
+2.  **數據讀取**: 腳本透過 `bigquery_dao.load_data()`，從 BigQuery 讀取**所有**在 Phase 1 中採集到的 `raw_*` 表格，將它們載入為多個 Pandas DataFrames。
+3.  **數據轉換**: 
+    *   **Join**: 以 `bid_info` (競拍案) 為主表，將其他表格 (財務、營收、股價等) 根據證券代號與日期進行左連接 (Left Join)。
+    *   **Calculation**: 根據 `config.yaml` 中定義的特徵列表，進行大量衍生計算。例如，`營收年增率 = (當期營收 - 去年同期營收) / 去年同期營收`。
+    *   **Transformation**: 對偏態分佈的欄位應用 `skew_transformer` 進行對數或 Box-Cox 轉換。
+    *   **Imputation**: 處理計算過程中產生的 `NaN` 或 `inf` 值。
+4.  **持久化**: 生成一個包含數百個特徵的單一寬表 DataFrame (`all_features`)，並透過 `bigquery_dao.load_data()` 將其寫入 BigQuery 的 `processed_all_features` 表中。
+
+### **Phase 3: 模型訓練 (Modeling)**
+
+1.  **觸發**: 執行 `src.models.train.py`。
+2.  **數據讀取**: 透過 `bigquery_dao` 從 BigQuery 讀取 `processed_all_features` 表。
+3.  **數據分割**: 根據開標日期，將數據集切割為訓練集 (Training set) 與驗證集 (Validation set)，確保驗證集的時間發生在訓練集之後，防止數據洩漏。
+4.  **模型訓練**: 實例化 `config.yaml` 中指定的模型 (如 XGBoost)，並在訓練集上執行 `.fit()` 方法。
+5.  **持久化**: 訓練完成的模型物件 (e.g., `xgb_model`) 被 `joblib` 序列化為二進制檔案。`storage_handler.upload_file()` 被呼叫，將此模型檔案上傳至 Google Cloud Storage (GCS) 的指定路徑，並可能覆蓋名為 `latest_model.joblib` 的檔案。
+
+### **Phase 4: 推理與呈現 (Inference & Serving)**
+
+1.  **觸發**: 使用者透過瀏覽器訪問 Streamlit 應用。
+2.  **應用初始化**: `Home.py` 或 `pages/*.py` 啟動時：
+    *   呼叫 `storage_handler.download_file()` 從 GCS 下載 `latest_model.joblib` 模型檔案，並透過 `joblib.load()` 將其反序列化至記憶體中。此過程被 `@st.cache_resource` 緩存。
+    *   透過 `streamlit_unit/query_func.py` 中被 `@st.cache_data` 緩存的函式，經由 `bigquery_dao` 從 BigQuery 讀取前端頁面所需的數據 (如當前競拍列表、歷史數據等)。
+3.  **推理執行 (Predict View)**:
+    *   使用者從下拉選單中選擇一個競拍標的。
+    *   應用程式從已讀取的數據中，找到該標的對應的特徵向量 (a single row from `all_features`)。
+    *   將該向量傳遞給記憶體中模型的 `.predict()` 方法。
+4.  **結果呈現**: 
+    *   推理結果 (如預測溢價率) 被格式化後顯示在前端。
+    *   從資料庫讀取的數據，其欄位名會透過 `streamlit_unit/mappings.py` 中的字典轉換為中文，然後以 Plotly 圖表或表格形式呈現給使用者。
 
 ---
 
-## 4. 設計決策與效能考量
+## 3. 流程圖 (Process Flowchart)
 
-- **向量化運算:** 重度依賴 Pandas 和 NumPy 的向量化操作，避免在資料處理中使用 Python 的 `for` 迴圈，以獲取高效能。
+```mermaid
+graph TD
+    subgraph Legend
+        direction LR
+        actor[fa:fa-user User] -.-> action
+        process[(Process)] -.-> action
+        database[[fa:fa-database Database]] -.-> action
+        storage{{fa:fa-hdd Cloud Storage}} -.-> action
+    end
 
-- **狀態與轉換器分離:** 將 `SkewTransformer` 和 `FeatureSelector` 這類「有狀態」的物件序列化儲存（`.joblib`）是一個核心的 MLOps 實踐。它確保了從訓練到預測，資料都經過**完全相同**的轉換，從根本上杜絕了訓練-預測偏差（Training-Serving Skew）。
+    subgraph Ingestion [Phase 1: Ingestion]
+        direction TB
+        CRAWL_MAIN(src.crawlers.main) -- Invokes --> CRAWLERS(Crawlers);
+        CRAWLERS -- Fetches data from --> EXTERNAL[External APIs / Websites];
+        CRAWLERS -- Writes DF to --> BQ_DAO1(bigquery_dao);
+        BQ_DAO1 -- Writes to --> BQ_RAW[[BigQuery Raw Tables]];
+    end
+    
+    subgraph Processing [Phase 2: Processing]
+        direction TB
+        FEAT_ENG(src.processors.feature_engineer) -- Reads via --> BQ_DAO2(bigquery_dao);
+        BQ_DAO2 -- Reads from --> BQ_RAW;
+        FEAT_ENG -- Writes DF to --> BQ_DAO3(bigquery_dao);
+        BQ_DAO3 -- Writes to --> BQ_PROCESSED[[BigQuery Processed Feature Table]];
+    end
 
-- **記憶體與資料庫的權衡:** 在應用層記憶體中進行資料合併是一個有意識的權衡。我們犧牲了單一節點的記憶體，換取了開發效率、靈活性以及對資料庫的低依賴。對於更大的資料集，此策略需調整為 Dask 或 Spark 等分散式方案。
+    subgraph Modeling [Phase 3: Modeling]
+        direction TB
+        TRAIN(src.models.train) -- Reads via --> BQ_DAO4(bigquery_dao);
+        BQ_DAO4 -- Reads from --> BQ_PROCESSED;
+        TRAIN -- Serializes & Uploads via --> GCS_HANDLER1(storage_handler);
+        GCS_HANDLER1 -- Uploads --> GCS_MODEL{{GCS: latest_model.joblib}};
+    end
 
-- **全域欄位命名標準化:**
-    - **設計意圖:** 我們建立了一個全域的 `MASTER_RENAME_MAP` 字典，用於將原始欄位名統一轉換為標準化格式。此設計旨在從源頭解決資料不一致問題，帶來**程式碼健壯性**、**資料庫相容性**與**消除歧義**三大好處。
+    subgraph Serving [Phase 4: Serving]
+        direction TB
+        USER[fa:fa-user User] -- Accesses --> STREAMLIT(Streamlit App);
+        STREAMLIT -- Downloads model via --> GCS_HANDLER2(storage_handler);
+        GCS_HANDLER2 -- Downloads from --> GCS_MODEL;
+        STREAMLIT -- Reads data via --> BQ_DAO5(bigquery_dao);
+        BQ_DAO5 -- Reads from --> BQ_PROCESSED;
+        BQ_DAO5 -- Reads from --> BQ_RAW;
+        STREAMLIT -- Performs Prediction & Displays --> USER;
+    end
 
-- **爬蟲階段的資料回滾機制:**
-    - **設計意圖:** 這是為了確保資料的「原子性」與「一致性」。一個競拍案件的特徵資料必須是「全部成功」或「全部失敗」的狀態。當任一特徵爬蟲失敗時，系統會自動刪除本次任務已寫入的「半成品」資料，以**防止資料污染**並**簡化重試邏輯**。
+    Ingestion --> Processing --> Modeling --> Serving;
+```
