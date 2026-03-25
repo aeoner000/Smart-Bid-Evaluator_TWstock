@@ -1,6 +1,9 @@
 
 import re
 import pandas as pd
+import logging
+
+logger = logging.getLogger(__name__)
 
 def to_number(text):
     if text is None:
@@ -21,7 +24,7 @@ def to_number(text):
         num = float(s)
         return -num if negative else num
     except Exception as e:
-        print(e)
+        logger.error(f"Failed to convert text to number: {text}", exc_info=True)
         return None
 
 def to_datetime(text_list):
@@ -41,6 +44,6 @@ def to_datetime(text_list):
                 dt = pd.to_datetime(clean_text)
                 results.append(dt)
         except Exception as e:
-            print(e)
+            logger.error(f"Failed to convert text to datetime: {t}", exc_info=True)
             pass
     return results

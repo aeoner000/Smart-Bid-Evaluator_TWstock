@@ -9,7 +9,7 @@ if str(root_path) not in sys.path:
 
 # --- 引入 ---
 from src.crawlers.base_crawler import BaseCrawler # 引入 BaseCrawler
-from src.utils.config_loader import cfg
+from src.utils.config_loader import config # 改造點：使用標準的 `config`
 from src.utils.market_utils import (
     get_market_Inst_tw, get_margin, get_market_usa, 
     get_market_tw
@@ -17,7 +17,7 @@ from src.utils.market_utils import (
 from src.utils.finmind_manager import FinMindManager
 
 # --- 設定 ---
-market_cfg = cfg["crawlers"]["market"]
+market_cfg = config["crawlers"]["market"] # 改造點：使用標準的 `config`
 FEATURE_COLS = market_cfg["feature_cols"]
 USA_TICKERS = market_cfg["usa_tickers"]
 USA_NAME_MAP = market_cfg["usa_name_map"]
@@ -55,7 +55,7 @@ class MarketCrawler(BaseCrawler):
         定義單一市場資料的抓取邏輯，包含與 FinMindManager 的互動。
         """
         try:
-            # 1. 從管理器獲取可用的 loader，同時token管理都在這裡
+            # 1. 從管理器獲取可用的 loader，token管理都在這裡
             loader = self.fm.get_loader()
             
             # 2. 執行抓取
@@ -76,6 +76,7 @@ class MarketCrawler(BaseCrawler):
             return False, str(e)
 
 
-if __name__ == "__main__":    
-    crawler = MarketCrawler()
-    crawler.run()
+# if __name__ == "__main__":    
+#     crawler = MarketCrawler()
+    # 說明：此處的 run() 呼叫的是 BaseCrawler 中定義好的通用流程
+    # crawler.run() # 實際運行需要提供 diff_index

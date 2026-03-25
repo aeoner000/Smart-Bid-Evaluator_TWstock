@@ -1,19 +1,41 @@
+
 # Global configuration for Smart-Bid-Evaluator_TWstock
 # This file is intended to replace hard-coded *_cfg.py constants.
 
+# -------------------------------------------------------------------
+#  Storage Configuration: "local" or "gcs"
+# -------------------------------------------------------------------
+storage:
+  type: "gcs"
+  gcs:
+    bucket_name: "bid-predict-gcs-bucket"
+    credentials_path: "json/gcp-auth.json"
+
+# -------------------------------------------------------------------
+#  Database Configuration: "sqlite" or "bigquery"
+# -------------------------------------------------------------------
 database:
-  # Add a type field to switch between databases
-  db_path: "data/database/database.sqlite3"
-  test_db_path: "data/database/test_database.sqlite3"  # test database
-  # Optional SQLite connect options
-  connect:
-    timeout: 30
-    check_same_thread: false
+  type: "bigquery"  # Switch between "sqlite" and "bigquery"
+  
+  sqlite:
+    # SQLite database location (relative to repo root)
+    db_path: "data/database/database.sqlite3"
+    test_db_path: "data/database/test_database.sqlite3"  # test database
+    # Optional SQLite connect options
+    connect:
+      timeout: 30
+      check_same_thread: false
+
+  bigquery:
+    project_id: "gen-lang-client-0590877921"
+    dataset_id: "bid_predict_table"
+    credentials_path: "json/gcp-auth.json"
 
 paths:
   skew_path: "src/models/saved_weights/skew_transformer.joblib"
   weights_dir: "src/models/saved_weights"
-
+  metadata_path: "json/training_metadata.json"
+  
 common:
   # Encoding for CSVs written by the project
   csv_encoding: "utf-8-sig"
@@ -26,51 +48,57 @@ ml_model_environment:
     random_state: 42
     test_size: 0.2
 
+  # 機器學習模型超參數搜尋空間配置
   models:
-    # LightGBM: 專注於限制葉子數與加強正則化
+    # LightGBM: 適合處理大規模特徵，需嚴格限制葉子數以防小樣本過擬合
     lgbm:
       static_params:
         objective: "regression"
         metric: "rmse"
+        n_estimators: 300          # 增加總樹量上限，給予充分學習空間
         verbosity: -1
         random_state: 42
       search_space:
-        learning_rate: { type: "float", low: 0.01, high: 0.05 }
-        num_leaves: { type: "int", low: 7, high: 15 }          # 關鍵：小樣本不能多
-        min_child_samples: { type: "int", low: 5, high: 20 }   # 防止單一葉子樣本太少
-        reg_alpha: { type: "float", low: 0.0, high: 10.0 }
-        reg_lambda: { type: "float", low: 0.0, high: 10.0 }
+        learning_rate: { type: "float", low: 0.01, high: 0.05 } # 慢速學習，確保收斂平穩
+        num_leaves: { type: "int", low: 7, high: 15 }          # 限制複雜度，小樣本數據嚴禁多葉片
+        min_child_samples: { type: "int", low: 10, high: 30 }  # 提高節點門檻，增加模型保守度
+        reg_alpha: { type: "float", low: 1.0, high: 10.0 }     # L1 正則：強制縮減係數，解決強特徵排擠
+        reg_lambda: { type: "float", low: 1.0, high: 10.0 }    # L2 正則：限制權重大小，防止預測值噴發
+        feature_fraction: { type: "float", low: 0.6, high: 0.8 } # 特徵抽樣：強迫模型挖掘弱特徵規律
+        bagging_fraction: { type: "float", low: 0.5, high: 0.8 } # 樣本抽樣：增加模型對異常值的抵抗力
 
-    # XGBoost: 專注於樹深與隨機採樣（增加魯棒性）
+    # XGBoost: 透過限制樹深與隨機採樣增加魯棒性
     xgb:
       static_params:
         objective: "reg:squarederror"
         eval_metric: "rmse"
+        n_estimators: 300          # 長線迭代，配合早停機制
         random_state: 42
+        verbosity: 0
       search_space:
-        learning_rate: { type: "float", low: 0.01, high: 0.05 }
-        max_depth: { type: "int", low: 3, high: 5 }            # 關鍵：股票數據淺層樹才穩
-        subsample: { type: "float", low: 0.6, high: 0.9 }      # 樣本抽樣
-        colsample_bytree: { type: "float", low: 0.6, high: 0.9 } # 特徵抽樣
-        gamma: { type: "float", low: 0.0, high: 5.0 }          # 控制分裂門檻
+        learning_rate: { type: "float", low: 0.01, high: 0.05 } # 穩定步長，避免跳過全局最優解
+        max_depth: { type: "int", low: 3, high: 5 }            # 限制深度，金融數據 3~5 層最穩
+        subsample: { type: "float", low: 0.5, high: 0.8 }       # 樣本隨機性，防止過度依賴特定標案
+        colsample_bytree: { type: "float", low: 0.6, high: 0.8 } # 特徵隨機性，杜絕單一強特徵霸凌
+        gamma: { type: "float", low: 0.1, high: 5.0 }          # 分裂懲罰，值越高模型越不容易亂分裂
 
-    # CatBoost: 專注於 L2 正則與樹深
+    # CatBoost: 專注於 L2 正則化，天生抗過擬合能力強
     cat:
       static_params:
         loss_function: "RMSE"
-        verbose: 0
+        iterations: 500            # 給予充足的優化回合
+        logging_level: 'Silent'     # 加上這行，保持輸出乾淨
         random_seed: 42
-        allow_writing_files: false
+        allow_writing_files: False
       search_space:
-        depth: { type: "int", low: 3, high: 6 }                # CatBoost 深度通常比 XGB 深一點點沒關係
-        learning_rate: { type: "float", low: 0.01, high: 0.05 }
-        l2_leaf_reg: { type: "float", low: 1.0, high: 10.0 }   # 關鍵：CatBoost 的 L2 強度非常重要
-        iterations: { type: "int", low: 200, high: 600 }
+        depth: { type: "int", low: 3, high: 5 }              # 淺層策略，過濾市場噪音
+        learning_rate: { type: "float", low: 0.01, high: 0.05 } # 確保模型在複雜面上緩慢下降
+        l2_leaf_reg: { type: "float", low: 1.0, high: 15.0 } # 強力 L2 懲罰，讓預測結果更平滑
+        rsm: { type: "float", low: 0.6, high: 0.8 }          # 每層分裂隨機特徵比，分散預測風險
   # 目標清單
   targets:
     stock_return:
       model_list: ["lgbm", "xgb", "cat"]
-
 
 crawlers:
   auction:
@@ -78,32 +106,34 @@ crawlers:
     year_range_url: "https://www.twse.com.tw/rwd/zh/announcement/auction/auctionYear"
     rename_columns:
       "投標截止日": "投標結束日"
-      "競拍股數": "競拍數量(張)"
-      "最低每標單位(張)": "最低每標單投標數量(張)"
-      "最高投(得)標單位(張)": "最高投(得)標數量(張)"
-      "保證金成數": "保證金成數(%)"
-      "合格投標量(張)": "合格投標數量(張)"
-      "實際承銷價格(元)": "承銷價格(元)"
-      "取消競價拍賣（流標或取消）": "取消競價拍賣(流標或取消)"
+      "競拍股數": "競拍數量_張"
+      "最低每標單位(張)": "最低每標單投標數量_張"
+      "最高投(得)標單位(張)": "最高投_得_標數量_張"
+      "保證金成數": "保證金成數_百分比"
+      "合格投標量(張)": "合格投標數量_張"
+      "實際承銷價格(元)": "承銷價格_元"
+      "取消競價拍賣（流標或取消）": "取消競價拍賣_流標或取消"
     date_columns:
       - "開標日期"
       - "投標開始日"
       - "投標結束日"
-      - "撥券日期(上市、上櫃日期)"
-    numeric_columns:
-      - "競拍數量(張)"
-      - "最低投標價格(元)"
-      - "最高投(得)標數量(張)"
-      - "得標總金額(元)"
+      - "撥券日期_上市_上櫃日期"
+    float_columns:
+      - "最低投標價格_元"
+      - "得標總金額_元"
       - "總合格件"
-      - "合格投標數量(張)"
-      - "最低得標價格(元)"
-      - "最高得標價格(元)"
-      - "得標加權平均價格(元)"
+      - "最低得標價格_元"
+      - "最高得標價格_元"
+      - "得標加權平均價格_元"
+      - "得標手續費率_百分比"
+      - "承銷價格_元"
     int_columns:
-      - "最低每標單投標數量(張)"
-      - "保證金成數(%)"
-      - "每一投標單投標處理費(元)"
+      - "最低每標單投標數量_張"
+      - "保證金成數_百分比"
+      - "每一投標單投標處理費_元"
+      - "合格投標數量_張"
+      - "競拍數量_張"
+      - "最高投_得_標數量_張"
 
   financial:
     url_stmt: "https://mopsov.twse.com.tw/server-java/t164sb01"
@@ -117,11 +147,11 @@ crawlers:
         - "淨收益"
         - "收益"
       "本期淨利":
-        - "母公司業主（淨利／損）"
-        - "本期稅後淨利（損）歸屬於母公司業主"
+        - "母公司業主_淨利_損"
+        - "本期稅後淨利_損_歸屬於母公司業主"
         - "母公司業主"
-        - "母公司業主（淨利／損）"
-        - "本期淨利（淨損）"
+        - "母公司業主_淨利_損"
+        - "本期淨利_淨損"
         - "本期淨利"
       "每股盈餘":
         - "基本每股盈餘合計"
@@ -161,13 +191,13 @@ crawlers:
       - "融資張數增減"
       - "融券張數增減"
       - "融資金額增減"
-      - "道瓊工業_10日漲幅(%)"
-      - "標普500_10日漲幅(%)"
-      - "那斯達克_10日漲幅(%)"
-      - "費城半導體_10日漲幅(%)"
-      - "大盤_10日漲幅(%)"
+      - "道瓊工業_10日漲幅_百分比"
+      - "標普500_10日漲幅_百分比"
+      - "那斯達克_10日漲幅_百分比"
+      - "費城半導體_10日漲幅_百分比"
+      - "大盤_10日漲幅_百分比"
       - "大盤_平均成交量"
-      - "櫃買_10日漲幅(%)"
+      - "櫃買_10日漲幅_百分比"
       - "櫃買_平均成交量"
     usa_tickers:
       - "^GSPC"
@@ -175,10 +205,10 @@ crawlers:
       - "^DJI"
       - "^SOX"
     usa_name_map:
-      "^GSPC": "標普500_10日漲幅(%)"
-      "^IXIC": "那斯達克_10日漲幅(%)"
-      "^DJI": "道瓊工業_10日漲幅(%)"
-      "^SOX": "費城半導體_10日漲幅(%)"
+      "^GSPC": "標普500_10日漲幅_百分比"
+      "^IXIC": "那斯達克_10日漲幅_百分比"
+      "^DJI": "道瓊工業_10日漲幅_百分比"
+      "^SOX": "費城半導體_10日漲幅_百分比"
 
   price:
     price_cols:
@@ -231,9 +261,9 @@ feature_engineer:
       - "證券代號"
       - "投標開始日"
       - "證券名稱"
-      - "撥券日期(上市、上櫃日期)"
-      - "最低投標價格(元)"
-      - "最高投(得)標數量(張)"
+      - "撥券日期_上市_上櫃日期"
+      - "最低投標價格_元"
+      - "最高投_得_標數量_張"
       - "status"
 
     # 財務報表特徵 (基本面)
@@ -290,13 +320,13 @@ feature_engineer:
       - "融資張數增減"
       - "融券張數增減"
       - "融資金額增減"
-      - "道瓊工業_10日漲幅(%)"
-      - "標普500_10日漲幅(%)"
-      - "那斯達克_10日漲幅(%)"
-      - "費城半導體_10日漲幅(%)"
-      - "大盤_10日漲幅(%)"
+      - "道瓊工業_10日漲幅_百分比"
+      - "標普500_10日漲幅_百分比"
+      - "那斯達克_10日漲幅_百分比"
+      - "費城半導體_10日漲幅_百分比"
+      - "大盤_10日漲幅_百分比"
       - "大盤_平均成交量"
-      - "櫃買_10日漲幅(%)"
+      - "櫃買_10日漲幅_百分比"
       - "櫃買_平均成交量"
 
     # 模型訓練目標變數 (Y)
@@ -324,8 +354,8 @@ feature_engineer:
 
     # 2. 預測特徵 (X)
     x_features:
-      - 最低投標價格(元)
-      - 最高投(得)標數量(張)
+      - 最低投標價格_元
+      - 最高投_得_標數量_張
       - 營收成長率
       - 本期淨利成長率
       - 每股盈餘成長率
@@ -361,13 +391,13 @@ feature_engineer:
       - 融資張數增減
       - 融券張數增減
       - 融資金額增減
-      - 道瓊工業_10日漲幅(%)
-      - 標普500_10日漲幅(%)
-      - 那斯達克_10日漲幅(%)
-      - 費城半導體_10日漲幅(%)
-      - 大盤_10日漲幅(%)
+      - 道瓊工業_10日漲幅_百分比
+      - 標普500_10日漲幅_百分比
+      - 那斯達克_10日漲幅_百分比
+      - 費城半導體_10日漲幅_百分比
+      - 大盤_10日漲幅_百分比
       - 大盤_平均成交量
-      - 櫃買_10日漲幅(%)
+      - 櫃買_10日漲幅_百分比
       - 櫃買_平均成交量
       - fin_stmts_missing
       - revenue_info_missing
@@ -379,3 +409,4 @@ feature_engineer:
       - 法人比
       - Market_Heat
       - ROE_Quality
+      - Curr_Gap_Pct

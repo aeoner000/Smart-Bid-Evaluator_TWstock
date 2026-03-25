@@ -1,5 +1,5 @@
 
-import joblib, sys
+import joblib, sys, logging
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import TimeSeriesSplit
@@ -7,12 +7,14 @@ from sklearn.inspection import permutation_importance
 import lightgbm as lgb
 from pathlib import Path
 
+# --- 日誌與路徑標準化 ---
+logger = logging.getLogger(__name__)
+
 # --- 路徑處理 ---
 root_path = Path(__file__).resolve().parents[2]
 if str(root_path) not in sys.path:
     sys.path.insert(0, str(root_path))
 
-from src.utils.config_loader import cfg, SELECT_FEATURE_PATH
 # 此處不再需要 SkewTransformer
 # from .skew_transformer import SkewTransformer 
 
@@ -43,7 +45,7 @@ class FeatureSelector:
         to_drop = [column for column in upper.columns if any(upper[column] > 0.9)]
         
         keep_features = [col for col in x_cols if col not in to_drop]
-        print(f"共線性過濾：移除了 {len(to_drop)} 個高度相關欄位，剩餘 {len(keep_features)} 個。")
+        logger.info(f"Collinearity filter: Removed {len(to_drop)} highly correlated features, {len(keep_features)} remaining.")
         return keep_features
         
     def fit(self, df, x_cols, y_col):
@@ -81,10 +83,15 @@ class FeatureSelector:
         
         # 挑選前 N 個最重要的特徵 (註解完全保留)
         self.selected_features = importance_df.head(self.n_selected)['feature'].tolist()
-        print(f"挑選結束，選擇數量{len(self.selected_features)}，列表:")
+        mandatory_features = ["is_ky"]
+        for feat in mandatory_features:
+            if feat in reduced_x_cols and feat not in self.selected_features:
+                self.selected_features.append(feat)
+                logger.info(f"Manually including key feature: {feat}")
+        logger.info(f"Feature selection finished. Selected {len(self.selected_features)} features.")
         return self
 
     def save(self, dir, name="selected_features.joblib"):
         self.save_path = dir / name
         joblib.dump(self.selected_features, self.save_path)
-        print(f"🎯 選定特徵已存至: {self.save_path}")
+        logger.info(f"Selected features saved to: {self.save_path}")

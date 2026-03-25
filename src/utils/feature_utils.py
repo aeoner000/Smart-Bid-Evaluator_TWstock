@@ -1,3 +1,4 @@
+
 import pandas as pd
 import numpy as np
 
@@ -7,10 +8,10 @@ def set_type(df:pd.DataFrame)-> pd.DataFrame:
     for col in cols_list:
         if col in ["證券代號", "證券名稱", "status"]:
             df[col] = df[col].astype(str)
-        elif col in ["投標開始日", "撥券日期(上市、上櫃日期)"]:
+        elif col in ["投標開始日", "撥券日期_上市_上櫃日期"]:
             df[col] = pd.to_datetime(df[col], format="mixed")
         else:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype('float64')
     return df
 
 def sort_by_date(df:pd.DataFrame)-> pd.DataFrame:
@@ -34,7 +35,7 @@ def apply_growth_cap(df, cap=10.0):
     # 同時我們也把常見的獲利指標 ROE/ROA 納入 (如果它們結尾不是率)
     target_cols = [
         c for c in df.columns
-        if (c.endswith("率") or "ROE" in c or "ROA" in c)
+        if (c.endswith("率") or c.endswith("_百分比") or "ROE" in c or "ROA" in c)
         and c not in exclude_cols
     ]
 
@@ -86,11 +87,12 @@ def add_new_feature(df:pd.DataFrame)-> pd.DataFrame:
     '''
     df['is_ky'] = df['證券名稱'].str.upper().str.endswith('-KY', na=False).astype(int)
     df['is_Q4'] = (df['投標開始日'].dt.quarter == 4).astype(int)
-    df['days_to_listing'] = (df['撥券日期(上市、上櫃日期)'] - df['投標開始日']).dt.days
-    df['融資比'] = (df['融資張數增減'] / df['大盤_平均成交量']).round(3)
-    df['法人比'] = ((df['外資平均增減'] + df['投信平均增減'] + df['自營商平均增減']) / df['大盤_平均成交量']).round(3)
-    df['Market_Heat'] = (df['前一日成交金額'] / df['前十日內平均成交金額']).round(3)
-    df['ROE_Quality'] = (df['ROE'] * df['ROE成長率']).round(3)
+    df['days_to_listing'] = (df['撥券日期_上市_上櫃日期'] - df['投標開始日']).dt.days.astype(int)
+    df['融資比'] = (df['融資張數增減'] / df['大盤_平均成交量']).round(3).astype(float)
+    df['法人比'] = ((df['外資平均增減'] + df['投信平均增減'] + df['自營商平均增減']) / df['大盤_平均成交量']).round(3).astype(float)
+    df['Market_Heat'] = (df['前一日成交金額'] / df['前十日內平均成交金額']).round(3).astype(float)
+    df['ROE_Quality'] = (df['ROE'] * df['ROE成長率']).round(3).astype(float)
+    df['Curr_Gap_Pct'] = (df['前一日平均成交價'] / df['最低投標價格_元']) - 1
 
     return df
 

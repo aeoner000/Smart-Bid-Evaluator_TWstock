@@ -10,11 +10,11 @@ if str(root_path) not in sys.path:
 
 # --- 引入 ---
 from src.crawlers.base_crawler import BaseCrawler # 引入 BaseCrawler
-from src.utils.config_loader import cfg
+from src.utils.config_loader import config # 改造點：使用標準的 `config`
 from src.utils.price_utils import get_price_table, data_output
 
 # --- 設定 ---
-price_cfg = cfg["crawlers"]["price"]
+price_cfg = config["crawlers"]["price"]
 HEADERS = price_cfg["headers"]
 
 class PriceCrawler(BaseCrawler): # 繼承 BaseCrawler
@@ -42,6 +42,7 @@ class PriceCrawler(BaseCrawler): # 繼承 BaseCrawler
             # 任何抓取或處理過程中的意外都視為失敗
             return False, str(e)
 
-if __name__ == "__main__":
-    crawler = PriceCrawler()
-    crawler.run() # 呼叫的是 BaseCrawler 中定義好的 run()
+# if __name__ == "__main__":
+#     crawler = PriceCrawler()
+    # 說明：此處的 run() 呼叫的是 BaseCrawler 中定義好的通用流程
+    # crawler.run() # 實際運行需要提供 diff_index

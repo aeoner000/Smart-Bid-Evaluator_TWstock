@@ -1,3 +1,4 @@
+
 import pandas as pd
 import yfinance as yf
 from datetime import timedelta
@@ -66,7 +67,7 @@ def get_market_tw(target_time, days=10):
         price_col = 'Adj Close' if 'Adj Close' in df.columns else 'Close'
         total_change_pct = ((final_df[price_col].iloc[-1] - final_df[price_col].iloc[0]) / final_df[price_col].iloc[0]) * 100
         code_name = "大盤" if code == "^TWII" else "櫃買"
-        re[f"{code_name}_10日漲幅(%)"] = round(total_change_pct, 3)
+        # 修正：使用標準化後的欄位名稱
+        re[f"{code_name}_10日漲幅_百分比"] = round(total_change_pct, 3)
         re[f"{code_name}_平均成交量"] = round(final_df['Volume'].mean(), 0)
     return pd.Series(re)
-

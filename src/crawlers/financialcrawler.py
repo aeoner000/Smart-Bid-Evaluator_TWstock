@@ -1,3 +1,4 @@
+import sys
 import time
 import random
 import requests
@@ -5,20 +6,19 @@ import numpy as np
 import pandas as pd
 from lxml import etree
 from pathlib import Path
-import sys
 
 # --- 路徑處理 ---
-root_dir = Path(__file__).resolve().parents[2]
-if str(root_dir) not in sys.path:
-    sys.path.insert(0, str(root_dir))
+root_path = Path(__file__).resolve().parents[2]
+if str(root_path) not in sys.path:
+    sys.path.insert(0, str(root_path))
 
 # --- 引入 ---
 from src.crawlers.base_crawler import BaseCrawler # 引入 BaseCrawler
-from src.utils.config_loader import cfg
+from src.utils.config_loader import config # 改造點：使用標準的 `config`
 from src.utils.financial_format_utils import to_number, to_datetime
 
 # --- 設定 ---
-financial_cfg = cfg["crawlers"]["financial"]
+financial_cfg = config["crawlers"]["financial"]
 URL_STMT = financial_cfg["url_stmt"]
 URL_DOC = financial_cfg["url_doc"]
 HEADERS = financial_cfg["headers"]
@@ -152,6 +152,7 @@ class FinancialCrawler(BaseCrawler):
             return False, str(e)
 
 
-if __name__ == "__main__":
-    crawler = FinancialCrawler()
-    crawler.run() # 呼叫的是 BaseCrawler 中定義好的 run()
+# if __name__ == "__main__":
+#     crawler = FinancialCrawler()
+    # 說明：此處的 run() 呼叫的是 BaseCrawler 中定義好的通用流程
+    # crawler.run() # 實際運行需要提供 diff_index

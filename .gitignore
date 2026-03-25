@@ -1,26 +1,51 @@
-__pycache__/
-*.py[cod]
-*$py.class
-
-src/models/saved_weights/
-
-.vscode/
-.env
-*.log
-.venv/
+# === Python 虛擬環境與編譯快取 ===
 venv/
+.venv/
 env/
-.DS_Store
+bin/
+include/
+lib/
+lib64/
+share/
+etc/
+pyvenv.cfg
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
 
+# === Streamlit 特定設定 ===
+# 排除本地的機密資訊 (secrets.toml)
+.streamlit/secrets.toml
+# 如果你有使用 Streamlit 運算快取，也建議排除
+.streamlit/cache/
+
+# === 敏感資訊與憑證 (絕對不能上傳) ===
 json/gcp-auth.json
-data/raw_table/*.csv
-data/processed/*.csv
+.env
+gcp_auth.json
 
-*.db
-*.db-journal
-*.sqlite3
+# === 本地資料庫與數據雜物 ===
+data/database/database.sqlite3
+data/example/*.csv
+*.sqlite
+*.csv
+*.log
+test.csv
+test.py
+warm_up_cache.py
+migrate_sqlite_to_bq.py
 
+# === 模型訓練相關 ===
+json/training_metadata.json
+src/models/saved_weights/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# === IDE 與系統雜物 ===
+.vscode/
+.idea/
+.idx/
+.devcontainer/
 .DS_Store
 Thumbs.db
-
-test.csv

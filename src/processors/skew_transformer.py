@@ -1,9 +1,14 @@
+
 import joblib, os
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import PowerTransformer
+import logging
 
 from src.utils.feature_utils import identify_binary_columns
+from src.utils.storage_handler import get_storage_handler
+
+logger = logging.getLogger(__name__)
 
 
 class SkewTransformer:
@@ -33,7 +38,7 @@ class SkewTransformer:
         else:
             binary_cols = identify_binary_columns(df)
             check_cols = [col for col in df.columns if col not in binary_cols]
-        
+
         # 2. 篩選數值型且絕對偏態值 > threshold 的欄位
         numeric_df = df[check_cols].select_dtypes(include=[np.number])
         if numeric_df.empty:
@@ -137,13 +142,26 @@ class SkewTransformer:
         return data
 
     def save(self, path):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        joblib.dump(self, path)
-        print(f"✅ SkewTransformer 儲存完畢: {path}")
+        """Saves the transformer using the centralized storage handler."""
+        try:
+            storage = get_storage_handler()
+            storage.save_file(self, path)
+            logger.info(f"SkewTransformer saved successfully to: {path}")
+        except Exception as e:
+            logger.error(f"Failed to save SkewTransformer to {path}: {e}")
+            raise
 
     @staticmethod
     def load(path):
-        if os.path.exists(path):
-            return joblib.load(path)
-        print(f"⚠️ 找不到路徑: {path}")
-        return None
+        """Loads the transformer using the centralized storage handler."""
+        try:
+            storage = get_storage_handler()
+            logger.info(f"Attempting to load SkewTransformer from: {path}")
+            return storage.load_file(path)
+        except FileNotFoundError:
+            # This preserves the original logic of returning None if the file doesn't exist.
+            logger.warning(f"Transformer file not found at path: {path}")
+            return None
+        except Exception as e:
+            logger.error(f"An unexpected error occurred while loading SkewTransformer from {path}: {e}")
+            raise

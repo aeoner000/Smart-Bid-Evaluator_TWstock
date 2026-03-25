@@ -35,16 +35,24 @@
     previews = {
       enable = true;
       previews = {
-        # web = {
-        #   # Example: run "npm run dev" with PORT set to IDX's defined port for previews,
-        #   # and show it in IDX's web preview panel
-        #   command = ["npm" "run" "dev"];
-        #   manager = "web";
-        #   env = {
-        #     # Environment variables to set for your server
-        #     PORT = "$PORT";
-        #   };
-        # };
+        web = {
+          command = [
+            "./venv/bin/python"  # 這裡使用虛擬環境內的 Python
+            "-m"
+            "streamlit"
+            "run"
+            "app.py"
+            "--server.port"
+            "$PORT"
+            "--server.address"
+            "0.0.0.0"
+            "--server.enableCORS"
+            "false"
+            "--server.enableXsrfProtection"
+            "false"
+          ];
+          manager = "web";
+        };
       };
     };
 

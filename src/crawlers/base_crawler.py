@@ -1,31 +1,38 @@
+import sys
 import time
 import random
 import pandas as pd
-from abc import ABC, abstractmethod
 from pathlib import Path
-import sys
+from abc import ABC, abstractmethod
 
 # --- 路徑處理 ---
-root_dir = Path(__file__).resolve().parents[2]
-if str(root_dir) not in sys.path:
-    sys.path.insert(0, str(root_dir))
+root_path = Path(__file__).resolve().parents[2]
+if str(root_path) not in sys.path:
+    sys.path.insert(0, str(root_path))
 
-from src.db_base.db_manager import IPO_DAO
+# 改造點：從新的 db_manager 和舊的 schemas 導入
+from src.db_base.db_manager import get_db_manager
 from src.db_base.schemas import TABLE_SCHEMAS
-from src.utils.config_loader import DB_PATH, TEST_DB_PATH, DB_CONNECT_KWARGS
+
+# 說明：不再需要從 config_loader 導入 DB_PATH 等，也不再需要 sys.path 補丁
 
 class BaseCrawler(ABC):
     """
     爬蟲基礎類別，封裝了通用的執行、差異比對和存檔邏輯。
-    【v3 - 精準智慧基準日】
     """
     def __init__(self, table_name: str):
         if not table_name:
             raise ValueError("子類別必須提供 table_name")
         self.table_name = table_name
         self.key_cols = ["證券代號", "投標開始日"]
-        self.dao = IPO_DAO(DB_PATH, **DB_CONNECT_KWARGS)
-        self.dao.ensure_table_exists(self.table_name)
+        
+        # 改造點：使用新的工廠函式來獲取 DAO
+        self.dao = get_db_manager()
+        
+        # 說明：ensure_table_exists 不再由此處調用。
+        # 它應由 db_manager 內部或專門的 schema 管理腳本處理。
+        
+        # 待辦：TABLE_SCHEMAS 仍是硬式編碼，未來可改由 DAO 提供欄位資訊
         self.all_cols = [col[0] for col in TABLE_SCHEMAS[self.table_name]]
 
     @abstractmethod
@@ -59,15 +66,15 @@ class BaseCrawler(ABC):
                 if col not in self.key_cols and col in final_df.columns:
                     final_df[col] = pd.to_numeric(final_df[col], errors='coerce')
             self.dao.save_data(final_df, self.table_name, if_exists="append")
-            success_count = len(success_list) if success_list else 0
-            fail_count = len(fail_list) if fail_list else 0
+            success_count = len(success_list)
+            fail_count = len(fail_list)
             print(f"✅ 存檔操作完成。處理成功: {success_count} 筆, 標記失敗: {fail_count} 筆。")
         else:
             print("⚠️ 本次無新資料或失敗標記需存檔。")
 
     def run(self, diff_index: list, max_rounds=5):
         """
-        通用的主執行流程 (僅加入智慧基準日邏輯)。
+        通用的主執行流程。
         """
         if not diff_index:
             print(f"✅ ({self.table_name}) 無任何新任務需要執行。")
@@ -80,7 +87,6 @@ class BaseCrawler(ABC):
 
         try:
             round_num = 0
-            # 【新增】在迴圈外獲取一次今天日期，以提高效率
             today = pd.Timestamp.today().normalize()
 
             while fail_list and round_num < max_rounds:
@@ -91,22 +97,17 @@ class BaseCrawler(ABC):
                 for code, start_date in current_round_tasks:
                     bid_start_date = pd.to_datetime(start_date).normalize()
 
-                    # --- 智慧基準日邏輯 --- #
                     if today < bid_start_date:
-                        # 未來案件：以「今天」為基準日
                         base_date_for_crawling = today
                     else:
-                        # 歷史或當日案件：以「投標開始日」為基準日
                         base_date_for_crawling = bid_start_date
                     
                     print(f"處理: {code} (投標日: {bid_start_date.date()}, 基準日: {base_date_for_crawling.date()})...", end=" ")
                     
-                    # 【唯一的修改】將正確的基準日傳給 process_task
-                    # 注意：process_task 的參數名稱是 start_date，但我們傳入的是 base_date_for_crawling
                     success, result = self.process_task(code, base_date_for_crawling)
 
                     if success:
-                        row_data = {"證券代號": code, "投標開始日": start_date} # 存檔時仍用原始的 start_date
+                        row_data = {"證券代號": code, "投標開始日": start_date}
                         if isinstance(result, dict):
                             row_data.update(result)
                         successful_results.append(row_data)
@@ -132,8 +133,10 @@ class BaseCrawler(ABC):
         finally:
             print("\n💾 執行最終存檔...")
             if was_interrupted:
+                # 如果是中斷，只保存成功的
                 self._save(success_list=successful_results, fail_list=[])
             else:
+                # 如果是正常結束，保存成功和剩餘失敗的
                 self._save(success_list=successful_results, fail_list=fail_list)
             
             if fail_list:

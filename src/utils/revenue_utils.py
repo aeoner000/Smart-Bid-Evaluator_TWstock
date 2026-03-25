@@ -3,6 +3,9 @@ import pandas as pd
 import numpy as np
 from lxml import etree
 import time, random
+import logging
+
+logger = logging.getLogger(__name__)
 
 def get_revenue_data(code, y, m, session):
     """從 MOPS 抓取單月營收"""
@@ -44,7 +47,7 @@ def get_revenue_data(code, y, m, session):
                 return this_m, last_y, yoy
             time.sleep(2)
         except Exception as e:
-            print(f"網路異常: {e}")
+            logger.error(f"網路異常: {e}", exc_info=True)
             time.sleep(5)
     return None, None, None
 
@@ -76,5 +79,6 @@ def calculate_revenue_features(rev_list, yoy):
             "營收風險波動率_cv": float(cv),
             "近五月成長次數比率": float(consistency)
         }
-    except: 
+    except Exception as e: 
+        logger.error(f"計算 revenue features 時發生錯誤: {e}", exc_info=True)
         return None

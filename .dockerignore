@@ -1,0 +1,47 @@
+# === 1. 虛擬環境與 Python 雜物 ===
+venv/
+.venv/
+bin/
+include/
+lib/
+lib64/
+share/
+etc/
+pyvenv.cfg
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# === 2. 本地資料與開發腳本 (最重要，因為你已轉向 BigQuery) ===
+data/**
+json/**
+*.sqlite
+*.sqlite3
+*.csv
+*.log
+test.csv
+test.py
+warm_up_cache.py
+migrate_sqlite_to_bq.py
+
+# === 3. 開發環境與 IDE 設定 ===
+.git/
+.gitignore
+.vscode/
+.idea/
+.ipynb_checkpoints/
+.pytest_cache/
+.idx/
+.devcontainer/
+
+# === 4. 文檔與敏感資訊 ===
+*.md
+.env
+# 雖然上面排除了 json/，這裡再加強保險
+gcp_auth.json
+gcp-auth.json
+
+# === 5. 特殊暫存 ===
+.streamlit/config.toml
+# (如果你本地有設定一些 Streamlit 的私有配置，建議也排除，讓 Docker 用預設值)

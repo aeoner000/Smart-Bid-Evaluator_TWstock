@@ -11,14 +11,8 @@
 - finmind_manager: 統一管理 FinMind API
 """
 
-from .config_loader import cfg, DB_PATH, DB_CONNECT_KWARGS, CSV_ENCODING, USER_AGENT
 from .finmind_manager import FinMindManager
 
 __all__ = [
-    "cfg",
-    "DB_PATH",
-    "DB_CONNECT_KWARGS",
-    "CSV_ENCODING",
-    "USER_AGENT",
     "FinMindManager",
 ]

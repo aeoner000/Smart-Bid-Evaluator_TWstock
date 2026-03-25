@@ -1,6 +1,7 @@
+
 """
 ** 資料結構定義 **
-schemas.py 定義 SQLite 表格的結構，包含欄位名稱、格式、約束
+schemas.py 定義資料庫表格的結構，包含欄位名稱、格式、約束
 Note: SQLite 沒有時間格式，目前都以TEXT替代
 """
 
@@ -13,33 +14,33 @@ TableSchema = List[Tuple[str, str, str]]
 TABLE_SCHEMAS: Dict[str, TableSchema] = {
     "bid_info": [
         # Auction bid information
-        ("開標日期", "TEXT", "NOT NULL"),  # DATE stored as TEXT in SQLite
+        ("開標日期", "TEXT", "NOT NULL"),
         ("證券名稱", "TEXT", ""),
         ("證券代號", "TEXT", "NOT NULL"),
         ("發行市場", "TEXT", ""),
         ("發行性質", "TEXT", ""),
         ("競拍方式", "TEXT", ""),
-        ("投標開始日", "TEXT", ""),  # DATE stored as TEXT in SQLite
-        ("投標結束日", "TEXT", ""),  # DATE stored as TEXT in SQLite
-        ("競拍數量(張)", "REAL", ""),
-        ("最低投標價格(元)", "REAL", ""),
-        ("最低每標單投標數量(張)", "INTEGER", ""),
-        ("最高投(得)標數量(張)", "REAL", ""),
-        ("保證金成數(%)", "INTEGER", ""),
-        ("每一投標單投標處理費(元)", "INTEGER", ""),
-        ("撥券日期(上市、上櫃日期)", "TEXT", ""),  # DATE stored as TEXT in SQLite
+        ("投標開始日", "TEXT", ""),
+        ("投標結束日", "TEXT", ""),
+        ("競拍數量_張", "REAL", ""),
+        ("最低投標價格_元", "REAL", ""),
+        ("最低每標單投標數量_張", "INTEGER", ""),
+        ("最高投_得_標數量_張", "REAL", ""),
+        ("保證金成數_百分比", "INTEGER", ""),
+        ("每一投標單投標處理費_元", "INTEGER", ""),
+        ("撥券日期_上市_上櫃日期", "TEXT", ""),
         ("主辦券商", "TEXT", ""),
-        ("得標總金額(元)", "REAL", ""),
-        ("得標手續費率(%)", "REAL", ""),
+        ("得標總金額_元", "REAL", ""),
+        ("得標手續費率_百分比", "REAL", ""),
         ("總合格件", "REAL", ""),
-        ("合格投標數量(張)", "REAL", ""),
-        ("最低得標價格(元)", "REAL", ""),
-        ("最高得標價格(元)", "REAL", ""),
-        ("得標加權平均價格(元)", "REAL", ""),
-        ("承銷價格(元)", "REAL", ""),
-        ("取消競價拍賣(流標或取消)", "TEXT", ""),
-        ("update_time", "TEXT", ""),  # DATETIME stored as TEXT in SQLite
-        ("status", "TEXT", ""),       # no_list、all_complete
+        ("合格投標數量_張", "REAL", ""),
+        ("最低得標價格_元", "REAL", ""),
+        ("最高得標價格_元", "REAL", ""),
+        ("得標加權平均價格_元", "REAL", ""),
+        ("承銷價格_元", "REAL", ""),
+        ("取消競價拍賣_流標或取消", "TEXT", ""),
+        ("update_time", "TEXT", ""),
+        ("status", "TEXT", ""),
     ],
 
     "fin_stmts": [
@@ -80,20 +81,20 @@ TABLE_SCHEMAS: Dict[str, TableSchema] = {
     "all_market_info": [
         # Market information
         ("證券代號", "TEXT", "NOT NULL"),
-        ("投標開始日", "TEXT", "NOT NULL"),  # DATE stored as TEXT in SQLite
+        ("投標開始日", "TEXT", "NOT NULL"),
         ("外資平均增減", "REAL", ""),
         ("投信平均增減", "REAL", ""),
         ("自營商平均增減", "REAL", ""),
         ("融資張數增減", "REAL", ""),
         ("融券張數增減", "REAL", ""),
         ("融資金額增減", "REAL", ""),
-        ("道瓊工業_10日漲幅(%)", "REAL", ""),
-        ("標普500_10日漲幅(%)", "REAL", ""),
-        ("那斯達克_10日漲幅(%)", "REAL", ""),
-        ("費城半導體_10日漲幅(%)", "REAL", ""),
-        ("大盤_10日漲幅(%)", "REAL", ""),
+        ("道瓊工業_10日漲幅_百分比", "REAL", ""),
+        ("標普500_10日漲幅_百分比", "REAL", ""),
+        ("那斯達克_10日漲幅_百分比", "REAL", ""),
+        ("費城半導體_10日漲幅_百分比", "REAL", ""),
+        ("大盤_10日漲幅_百分比", "REAL", ""),
         ("大盤_平均成交量", "REAL", ""),
-        ("櫃買_10日漲幅(%)", "REAL", ""),
+        ("櫃買_10日漲幅_百分比", "REAL", ""),
         ("櫃買_平均成交量", "REAL", ""),
     ],
 
@@ -130,7 +131,7 @@ TABLE_SCHEMAS: Dict[str, TableSchema] = {
         # Target variable for prediction
         ("證券代號", "TEXT", "NOT NULL"),
         ("投標開始日", "TEXT", "NOT NULL"),
-        ("撥券日期(上市、上櫃日期)", "TEXT", "NOT NULL"),
+        ("撥券日期_上市_上櫃日期", "TEXT", "NOT NULL"),
         ("成交量", "REAL", ""),
         ("成交金額", "REAL", ""),
         ("開盤價", "REAL", ""),
@@ -148,12 +149,12 @@ TABLE_SCHEMAS: Dict[str, TableSchema] = {
         # 主鍵
         ("證券代號", "TEXT", "NOT NULL"),
         ("投標開始日", "TEXT", "NOT NULL"),
-        ("撥券日期(上市、上櫃日期)", "TEXT", "NOT NULL"),
+        ("撥券日期_上市_上櫃日期", "TEXT", "NOT NULL"),
 
         # bid_info (競價拍賣基本資訊)
         ("證券名稱", "TEXT", "NOT NULL"),
-        ("最低投標價格(元)", "REAL", ""),
-        ("最高投(得)標數量(張)", "INTEGER", ""),
+        ("最低投標價格_元", "REAL", ""),
+        ("最高投_得_標數量_張", "INTEGER", ""),
 
         # fin_stmts (財務報表特徵 - 基本面)
         ("營收成長率", "REAL", ""),
@@ -197,13 +198,13 @@ TABLE_SCHEMAS: Dict[str, TableSchema] = {
         ("融資張數增減", "INTEGER", ""),
         ("融券張數增減", "INTEGER", ""),
         ("融資金額增減", "REAL", ""),
-        ("道瓊工業_10日漲幅(%)", "REAL", ""),
-        ("標普500_10日漲幅(%)", "REAL", ""),
-        ("那斯達克_10日漲幅(%)", "REAL", ""),
-        ("費城半導體_10日漲幅(%)", "REAL", ""),
-        ("大盤_10日漲幅(%)", "REAL", ""),
+        ("道瓊工業_10日漲幅_百分比", "REAL", ""),
+        ("標普500_10日漲幅_百分比", "REAL", ""),
+        ("那斯達克_10日漲幅_百分比", "REAL", ""),
+        ("費城半導體_10日漲幅_百分比", "REAL", ""),
+        ("大盤_10日漲幅_百分比", "REAL", ""),
         ("大盤_平均成交量", "REAL", ""),
-        ("櫃買_10日漲幅(%)", "REAL", ""),
+        ("櫃買_10日漲幅_百分比", "REAL", ""),
         ("櫃買_平均成交量", "REAL", ""),
 
         # target_variable (模型訓練目標變數)
@@ -211,7 +212,19 @@ TABLE_SCHEMAS: Dict[str, TableSchema] = {
         ("最低得標加價率", "REAL", ""),
         ("加權平均加價率", "REAL", ""),
 
-        ("status", "TEXT", ""), # no_list、all_complete
+        # 新增
+        ("fin_stmts_missing", "REAL", ""),
+        ("revenue_info_missing", "REAL", ""),
+        ("history_price_info_missing", "REAL", ""),
+        ("is_ky", "REAL", ""),
+        ("is_Q4", "REAL", ""),
+        ("days_to_listing", "REAL", ""),
+        ("融資比", "REAL", ""),
+        ("法人比", "REAL", ""),
+        ("Market_Heat", "REAL", ""),
+        ("ROE_Quality", "REAL", ""),
+        ("Curr_Gap_Pct", "REAL", ""),
+        
     ]
 }
 
@@ -250,7 +263,7 @@ def create_table_sql(table_name: str) -> str:
 
     columns_sql = []
     for col_name, col_type, constraints in schema:
-        col_def = f"[{col_name}] {col_type}"
+        col_def = f'"[{col_name}]" {col_type}' # 修正為適用 SQLite 的方括號
         if constraints:
             col_def += f" {constraints}"
         columns_sql.append(col_def)
@@ -258,7 +271,7 @@ def create_table_sql(table_name: str) -> str:
     columns_str = ",\n    ".join(columns_sql)
 
     sql = f"""
-        CREATE TABLE IF NOT EXISTS {table_name} (
+        CREATE TABLE IF NOT EXISTS "{table_name}" (
             {columns_str}
         );
     """.strip()

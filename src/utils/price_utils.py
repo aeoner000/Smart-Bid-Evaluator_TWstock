@@ -1,6 +1,10 @@
+
 import requests as req
 import pandas as pd
 import time, random
+import logging
+
+logger = logging.getLogger(__name__)
 
 def fix_date(date_str):
     """將民國日期字串 (114/01/01) 轉為 datetime 物件"""
@@ -38,10 +42,10 @@ def get_price_table(code, y, m, headers):
 
                     # 1. 確保只取前 7 欄並統一命名
                     df_combi = df_combi.iloc[:, 0:7].copy()
-                    df_combi.columns = ["日期", "成交股數", "成交金額(元)", "成交最高", "成交最低", "成交均價", "筆數"]
+                    df_combi.columns = ["日期", "成交股數", "成交金額_元", "成交最高", "成交最低", "成交均價", "筆數"]
                     
                     # 2. 針對「每一欄 (Series)」個別使用 .str 處理
-                    num_cols = ["成交股數", "成交金額(元)", "成交最高", "成交最低", "成交均價", "筆數"]
+                    num_cols = ["成交股數", "成交金額_元", "成交最高", "成交最低", "成交均價", "筆數"]
                     for col in num_cols:
                         # 先轉為字串以防萬一，再去掉逗號，最後轉數字
                         df_combi[col] = df_combi[col].astype(str).str.replace(',', '')
@@ -51,12 +55,12 @@ def get_price_table(code, y, m, headers):
                     df_combi["日期"] = df_combi["日期"].apply(fix_date)
                     return df_combi
                 else:
-                    print(f"⚠️ {code} 資料表結構異常或無資料")
+                    logger.warning(f"⚠️ {code} 資料表結構異常或無資料")
             else:
-                print(f"⚠️ {code} 連線失敗 (Status: {r1.status_code})")
+                logger.warning(f"⚠️ {code} 連線失敗 (Status: {r1.status_code})")
 
         except Exception as e:
-            print(f"❌ 第 {attempt} 次嘗試發生錯誤: {e}")
+            logger.error(f"❌ 第 {attempt} 次嘗試發生錯誤: {e}", exc_info=True)
 
         time.sleep(attempt * 2 + random.uniform(1, 3))
     return None
@@ -75,7 +79,7 @@ def data_output(df, target_date):
     # 單日指標 (取最後一列)
     last_row = df.iloc[-1]
     re['前一日平均成交價'] = last_row['成交均價']
-    re['前一日成交金額'] = last_row['成交金額(元)']
+    re['前一日成交金額'] = last_row['成交金額_元']
     re['前一日最高成交價'] = last_row['成交最高']
     re['前一日最低成交價'] = last_row['成交最低']
     re['前一日成交筆數'] = last_row['筆數']
@@ -84,7 +88,7 @@ def data_output(df, target_date):
     # 十日平均指標 (取最後十列)
     last_10 = df.tail(10)
     re['前十日內平均成交價'] = round(last_10['成交均價'].mean(), 3)
-    re['前十日內平均成交金額'] = round(last_10['成交金額(元)'].mean(), 0)
+    re['前十日內平均成交金額'] = round(last_10['成交金額_元'].mean(), 0)
     re['前十日內平均成交筆數'] = round(last_10['筆數'].mean(), 0)
     re['前十日內平均成交股數'] = round(last_10['成交股數'].mean(), 0)
 

@@ -1,8 +1,11 @@
 
-import sys, time, random
+import sys, time, random, logging
 from pathlib import Path
 import pandas as pd
 import requests
+
+# --- 日誌與路徑標準化 ---
+logger = logging.getLogger(__name__)
 
 # --- 路徑處理 ---
 root_path = Path(__file__).resolve().parents[2]
@@ -11,11 +14,11 @@ if str(root_path) not in sys.path:
 
 # --- 引入 ---
 from src.crawlers.base_crawler import BaseCrawler # 引入 BaseCrawler
-from src.utils.config_loader import cfg
+from src.utils.config_loader import config # 改造點：使用標準的 `config`
 from src.utils.revenue_utils import get_revenue_data, calculate_revenue_features
 
 # --- 設定 ---
-revenue_cfg = cfg["crawlers"]["revenue"]
+revenue_cfg = config["crawlers"]["revenue"] # 改造點：使用標準的 `config`
 HEADERS = revenue_cfg["headers"]
 
 class RevenueCrawler(BaseCrawler):
@@ -30,7 +33,7 @@ class RevenueCrawler(BaseCrawler):
             # 取得 Cookie
             self.session.get("https://mops.twse.com.tw/mops/#/web/t05st10_ifrs", timeout=15)
         except requests.exceptions.RequestException as e:
-            print(f"⚠️ RevenueCrawler 初始化 session cookie 失敗: {e}")
+            logger.error(f"RevenueCrawler failed to initialize session cookie: {e}")
 
     def process_task(self, code: str, start_date: pd.Timestamp) -> tuple[bool, dict | str]:
         """
@@ -81,5 +84,12 @@ class RevenueCrawler(BaseCrawler):
             return False, str(e)
 
 if __name__ == "__main__":
-    crawler = RevenueCrawler()
-    crawler.run() # 呼叫 BaseCrawler 的 run()
+    # Set up basic logging for standalone script execution
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        stream=sys.stdout
+    )
+    # crawler = RevenueCrawler()
+    # 說明：此處的 run() 呼叫的是 BaseCrawler 中定義好的通用流程
+    # crawler.run() # 實際運行需要提供 diff_index
