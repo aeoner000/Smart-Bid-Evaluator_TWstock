@@ -3,120 +3,170 @@ import pandas as pd
 import io
 import joblib
 import os
+import json
 from google.cloud import bigquery, storage
 from google.oauth2 import service_account
 
 # ==========================================
-# 0. 輔助函式：安全取得配置 (完全繞過 Streamlit 報錯)
+# 0️⃣ 環境變數設定說明
 # ==========================================
-def get_config(env_name, secret_path, default=None):
-    """
-    1. 優先從環境變數抓 (Cloud Run 模式，最快也最穩)
-    2. 如果檔案真的存在，才試圖讀 st.secrets (本地模式)
-    """
-    # 優先嘗試環境變數 (Cloud Run 設定)
-    val = os.environ.get(env_name)
-    if val:
-        return val
-    
-    # 只有實體檔案存在，我們才允許呼叫 st.secrets
-    # 這是為了避免 Streamlit 發現沒檔案時直接拋出 StreamlitSecretNotFoundError
-    if os.path.exists(".streamlit/secrets.toml"):
-        try:
-            # 這裡不直接寫 st.secrets[path]，避免任何潛在的初始化錯誤
-            keys = secret_path.split(".")
-            target = st.secrets
-            for k in keys:
-                if k in target:
-                    target = target[k]
-                else:
-                    return default
-            return target
-        except:
-            pass
-    return default
+# Cloud Run / GCE 建議設定：
+PROJECT_ID="gen-lang-client-0590877921"
+GCS_BUCKET="bid-predict-gcs-bucket"
+#
+# 本地開發可選：
+#   GCP_CREDENTIALS={Service Account JSON字串}
+#   或 GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json
 
 # ==========================================
-# 1. 核心認證 (自動適應：ADC vs Service Account)
+# 1️⃣ 環境變數取得
 # ==========================================
-@st.cache_resource(ttl=86400) 
+def get_env(name: str, default=None, required=False):
+    """
+    統一取得環境變數
+    - required=True -> 沒設會直接報錯
+    """
+    val = os.environ.get(name, default)
+    if required and not val:
+        raise ValueError(f"❌ 缺少必要環境變數: {name}")
+    return val
+
+# ==========================================
+# 2️⃣ GCP 認證 (ADC 優先，JSON fallback)
+# ==========================================
+@st.cache_resource(ttl=86400)
 def get_gcp_credentials():
     """
-    雲端部署實務：在 Cloud Run 不需要金鑰檔案，回傳 None 讓 Client 自動找身分。
+    認證策略（優先順序）：
+    1️⃣ ADC（Cloud Run / GCE IAM）
+    2️⃣ 環境變數 JSON (GCP_CREDENTIALS)
+    3️⃣ JSON 檔案 (GOOGLE_APPLICATION_CREDENTIALS)
     """
-    if os.path.exists(".streamlit/secrets.toml"):
+    # 1️⃣ 嘗試 ADC
+    try:
+        from google.auth import default
+        creds, project = default()
+        if creds:
+            print("✅ 使用 ADC 認證 (Cloud Run / GCE IAM)")
+            return creds
+    except Exception:
+        pass
+
+    # 2️⃣ 環境變數 JSON
+    json_str = os.environ.get("GCP_CREDENTIALS")
+    if json_str:
         try:
-            # 只有在本地開發環境才讀取 Service Account info
-            # 確保不會在雲端環境觸發 st.secrets 檢查
-            if "gcp_service_account" in st.secrets:
-                info = st.secrets["gcp_service_account"]
-                if info.get("private_key"):
-                    return service_account.Credentials.from_service_account_info(info)
-        except:
-            pass
+            info = json.loads(json_str)
+            print("✅ 使用 GCP_CREDENTIALS JSON 字串")
+            return service_account.Credentials.from_service_account_info(info)
+        except Exception as e:
+            raise ValueError(f"❌ GCP_CREDENTIALS 解析失敗: {e}")
+
+    # 3️⃣ JSON 檔案
+    key_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if key_path and os.path.exists(key_path):
+        try:
+            print("✅ 使用 GOOGLE_APPLICATION_CREDENTIALS 檔案")
+            return service_account.Credentials.from_service_account_file(key_path)
+        except Exception as e:
+            raise ValueError(f"❌ 憑證檔案讀取失敗: {e}")
+
+    print("⚠️ 未找到 ADC 或 JSON，回傳 None（Client 會自動嘗試 ADC）")
     return None
 
 # ==========================================
-# 2. BigQuery 數據提取
+# 3️⃣ BigQuery Client
 # ==========================================
-@st.cache_data(ttl=86400) 
-def get_bq_table(query: str):
+@st.cache_resource(ttl=86400)
+def get_bq_client():
     creds = get_gcp_credentials()
-    # 雲端環境優先讀取環境變數 PROJECT_ID
-    project = get_config("PROJECT_ID", "gcp_service_account.project_id", "gen-lang-client-0590877921")
-    
+    project = get_env("PROJECT_ID", default=PROJECT_ID, required=True)
+    return bigquery.Client(credentials=creds, project=project)
+
+# ==========================================
+# 4️⃣ BigQuery 查詢
+# ==========================================
+@st.cache_data(ttl=86400)
+def get_bq_table(query: str) -> pd.DataFrame:
+    """
+    執行 SQL 並回傳 DataFrame
+    """
     try:
-        # 當 creds 為 None 時，Google Cloud SDK 會自動使用 Cloud Run 的身分 (ADC)
-        client = bigquery.Client(credentials=creds, project=project)
+        client = get_bq_client()
         return client.query(query).to_dataframe()
     except Exception as e:
-        # 這裡的錯誤會顯示在網頁上，方便排錯
-        st.error(f"❌ BigQuery 提取失敗: {e}")
+        st.error(f"❌ BigQuery 查詢失敗: {e}")
         return pd.DataFrame()
 
 # ==========================================
-# 3. GCS 操作
+# 5️⃣ GCS Client
 # ==========================================
-@st.cache_resource(ttl=86400) 
+@st.cache_resource(ttl=86400)
 def get_gcs_client():
     creds = get_gcp_credentials()
-    project = get_config("PROJECT_ID", "gcp_service_account.project_id", "gen-lang-client-0590877921")
+    project = get_env("PROJECT_ID", default=PROJECT_ID, required=True)
     return storage.Client(credentials=creds, project=project)
 
+# ==========================================
+# 6️⃣ 取得 Bucket
+# ==========================================
 def get_bucket():
-    # 雲端環境優先讀取環境變數 GCS_BUCKET
-    bucket_name = get_config("GCS_BUCKET", "gcp.gcs_bucket")
-    if not bucket_name:
-        st.error("❌ 找不到 GCS_BUCKET 設定，請檢查環境變數或 secrets.toml")
-        return None
+    bucket_name = get_env("GCS_BUCKET", default=GCS_BUCKET, required=True)
     return get_gcs_client().bucket(bucket_name)
 
-@st.cache_data(ttl=86400) 
-def download_gcs_file(source_blob_name: str):
-    bucket = get_bucket()
-    if bucket:
-        blob = bucket.blob(source_blob_name)
+# ==========================================
+# 7️⃣ 從 GCS 下載檔案
+# ==========================================
+@st.cache_data(ttl=86400)
+def download_gcs_file(blob_path: str) -> bytes:
+    """
+    從 GCS 下載檔案（bytes）
+    """
+    try:
+        bucket = get_bucket()
+        blob = bucket.blob(blob_path)
         return blob.download_as_bytes()
-    return None
+    except Exception as e:
+        st.error(f"❌ GCS 下載失敗: {e}")
+        return None
 
+# ==========================================
+# 8️⃣ 載入 joblib 模型（GCS）
+# ==========================================
 @st.cache_resource(ttl=86400)
 def load_joblib_from_gcs(path: str):
+    """
+    從 GCS 載入 joblib 模型
+    """
     data = download_gcs_file(path)
     if data:
-        buffer = io.BytesIO(data)
-        return joblib.load(buffer)
+        try:
+            buffer = io.BytesIO(data)
+            return joblib.load(buffer)
+        except Exception as e:
+            st.error(f"❌ 模型載入失敗: {e}")
     return None
 
 # ==========================================
-# 4. 本地端測試區塊
+# 9️⃣ 測試用
 # ==========================================
 if __name__ == "__main__":
-    print("="*50)
-    print("🧪 啟動脫離框架連線測試 (Standalone Test)...")
-    # 此時 os.path.exists 會偵測到你本地的檔案，測試會通過
-    TEST_QUERY = "SELECT current_timestamp() as time"
-    df = get_bq_table(TEST_QUERY)
+    print("=" * 50)
+    print("🧪 測試 GCP 連線...")
+
+    # BigQuery 測試
+    df = get_bq_table("SELECT CURRENT_TIMESTAMP() AS time")
     if not df.empty:
-        print(f"✅ 連線成功！專案: {get_config('PROJECT_ID', 'gcp_service_account.project_id')}")
-        print(f"雲端時間: {df['time'][0]}")
-    print("="*50)
+        print("✅ BigQuery 連線成功")
+        print(df.head())
+    else:
+        print("❌ BigQuery 無資料或連線失敗")
+
+    # GCS 測試
+    try:
+        bucket = get_bucket()
+        print(f"✅ GCS Bucket: {bucket.name}")
+    except Exception as e:
+        print(f"❌ GCS 測試失敗: {e}")
+
+    print("=" * 50)
