@@ -2,14 +2,10 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from streamlit_unit.query_func import get_curr_ipo, get_predict_result, get_base_info, get_feature_important
-from streamlit_unit.data_engine import add_system_info
 
 # 1. 頁面配置與進階 CSS
 st.set_page_config(layout="wide", page_title="即時預測中心")
-add_system_info(
-    title="操作說明",
-    content="1.點選資訊表左方小框開始預測<br>2.特徵重要性則告訴您哪些影響最大"
-)
+
 st.markdown("""
     <style>
     [data-testid="stDataFrameColHeaderCheckbox"] { display: none; }
@@ -44,13 +40,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-
-# 💡 新增：固定的全域權重資料 (不再隨選擇變動)
-GLOBAL_WEIGHTS = {
-    "features": {"vals": [0.45, 0.22, 0.15, 0.10, 0.08], "labs": ["法人籌碼面", "產業成長性", "財務穩定度", "市場情緒面", "技術指標面"]},
-    "sentiment": {"vals": [90, 82, 75, 60, 45], "labs": ["新聞正向率", "社群熱烈度", "機構推薦度", "散戶關注度", "空頭平倉量"]},
-    "industry": {"vals": [95, 88, 70, 65, 55], "labs": ["毛利領先度", "研發投入比", "市佔穩定率", "資產回報率", "現金流量比"]}
-}
 
 
 # 3. 第一區：列表
@@ -107,7 +96,15 @@ with col_left:
     for i, (label, val) in enumerate(base_info_series.items()):
         with m_cols[i % 3]:
             # 如果需要加上單位（如 %），可以在這裡判斷
-            display_val = f"{val:.2f}%" if "率" in label or "比" in label else f"{val:.2f}"
+            try:
+                num_val = float(val)
+                if "率" in label or "比" in label:
+                    display_val = f"{num_val:.2f}%"
+                else:
+                    display_val = f"{num_val:.2f}"
+            except (ValueError, TypeError):
+                # 如果 val 是 "N/A"、None 或無法轉成數字的字串，就直接顯示原值或 "-"
+                display_val = str(val) if val is not None else "-"
             
             st.markdown(
                 f'''

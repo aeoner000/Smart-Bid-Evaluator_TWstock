@@ -5,10 +5,9 @@ import numpy as np
 from plotly.subplots import make_subplots
 
 from streamlit_unit.query_func import get_all_avg_pred_diff, get_sample_size, get_update_time
-from streamlit_unit.data_engine import add_system_info
 
 
-last_reboot = get_update_time()
+
 st.markdown(f"""
     <div style="position: absolute; top: -50px; right: 60px; display: flex; gap: 15px; align-items: center;">
         <a href="https://github.com/aeoner000/Smart-Bid-Evaluator_TWstock.git" target="_blank" style="text-decoration: none; color: #666; font-size: 13px; display: flex; align-items: center; gap: 4px;">
@@ -20,14 +19,13 @@ st.markdown(f"""
         <div style="width: 1px; height: 12px; background-color: #ccc; margin: 0 5px;"></div>
     </div>
 """, unsafe_allow_html=True)
-add_system_info()
+
 # 建立三欄佈局，第一欄放標題，後兩欄放數據
 head_col, kpi1, kpi2 = st.columns([3, 1, 1])
-
 with head_col:
     st.markdown(f"""
         <h1 style="margin-bottom: 0px; font-weight: 900;">系統首頁</h1>
-        <p style="color: #666; font-size: 0.9rem;">最後更新：{last_reboot} | 每日爬蟲更新</p>
+        <p style="color: #666; font-size: 0.9rem;">最後更新：{{last_reboot}} | 每日爬蟲更新</p>
     """, unsafe_allow_html=True)
 
 with kpi1:

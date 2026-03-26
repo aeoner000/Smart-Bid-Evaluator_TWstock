@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 # 引入你剛才寫好的數據引擎函數
-from .data_engine import get_bq_table, list_gcs_files, download_gcs_file, load_joblib_from_gcs
+from .data_engine import get_bq_table, load_joblib_from_gcs
 from streamlit_unit.mappings import FIELD_NAME_MAP
 # 如果你需要處理時間或路徑，也可以引入這些（選配）
 from datetime import datetime
@@ -110,7 +110,7 @@ def get_predict_result(code):
 @st.cache_data(ttl=86400)
 def get_base_info(code):
     all_features = get_core_table("all_features")
-    need_col = ["證券代號", "每股盈餘", "每股盈餘成長率", "營收成長率", "ROE成長率", "每股淨值", "負債比"]
+    need_col = ["證券代號", "每股盈餘", "每股盈餘成長率", "營收成長率", "ROE", "每股淨值", "負債比"]
     df = all_features[need_col]
     df = df.rename(columns=FIELD_NAME_MAP, errors='ignore')
     mask = (df["證券代號"].astype(str) == code)
@@ -179,3 +179,17 @@ def get_contain_time_df():
         "map": col_map
         }
     return cols
+
+
+
+# ------------------------------------
+@st.cache_data(ttl=86400)
+def get_time():
+    """
+    獲取 BigQuery 伺服器當前時間，用於確認連線狀態與資料同步基準
+    """
+    df = get_core_table("bid_info")
+    if not df.empty and 'update_time' in df.columns:
+        # 取得 update 欄位中的最大值（最新時間）
+        return df['update_time'].max()
+    return None

@@ -4,13 +4,10 @@ import pandas as pd
 import numpy as np
 from scipy import stats
 from streamlit_unit.query_func import get_history_predict, get_all_feature_cols, get_contain_time_df
-from streamlit_unit.data_engine import add_system_info
+
 # 1. 頁面配置
 st.set_page_config(page_title="競拍歷史探索系統", layout="wide")
-add_system_info(
-    title="操作說明",
-    content="1.模型驗證回顧能知道模型表現如何<br>2.宏觀統計則能讓您自由調整座標軸特徵"
-)
+
 # 2. 核心 CSS (僅保留導航與容器樣式，不設定全域字體)
 st.markdown("""
     <style>
