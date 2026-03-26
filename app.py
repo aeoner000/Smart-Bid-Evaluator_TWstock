@@ -1,8 +1,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import datetime
-st.cache_data.clear()
-st.cache_resource.clear()
+
 # 設定頁面配置
 st.set_page_config(
     page_title="AI Auction v6.2",
