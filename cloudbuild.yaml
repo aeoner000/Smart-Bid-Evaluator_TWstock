@@ -1,0 +1,33 @@
+steps:
+  # 1. 打包 Docker 映像檔 (兩者共用同一個 Image)
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'asia-east1-docker.pkg.dev/$PROJECT_ID/smart-bid-app/smart-bid-evaluator:$COMMIT_SHA', '.']
+
+  # 2. 推送到 Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'asia-east1-docker.pkg.dev/$PROJECT_ID/smart-bid-app/smart-bid-evaluator:$COMMIT_SHA']
+
+  # 3. 自動更新 Cloud Run 服務 (網頁版)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'smart-bid-evaluator'
+      - '--image'
+      - 'asia-east1-docker.pkg.dev/$PROJECT_ID/smart-bid-app/smart-bid-evaluator:$COMMIT_SHA'
+      - '--region'
+      - 'asia-east1'
+
+  # 4. 自動更新 Cloud Run 工作 (爬蟲版)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'jobs'
+      - 'update'
+      - 'smart-bid-daily-crawler'
+      - '--image'
+      - 'asia-east1-docker.pkg.dev/$PROJECT_ID/smart-bid-app/smart-bid-evaluator:$COMMIT_SHA'
+      - '--region'
+      - 'asia-east1'
