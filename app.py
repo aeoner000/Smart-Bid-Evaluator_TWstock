@@ -1,6 +1,6 @@
 
 import streamlit as st
-st.cache_data.clear()
+# st.cache_data.clear()
 # 1. 頁面配置
 st.set_page_config(
     page_title="AI Auction v6.2",
