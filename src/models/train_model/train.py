@@ -48,7 +48,8 @@ def run_training_pipeline(new_total_count: int = None):
     fe_cfg = config["feature_engineer"]["feature_cols"]
     target_map = fe_cfg["target_variables_map"]
     candidate_models = ['lgbm', 'xgb', 'cat']
-    
+
+
     # Load transformers and metadata using storage_handler
     try:
         skew_path = config['paths']['skew_path'].replace('skew_transformer.joblib', 'all_y_skew_transformer.joblib')
@@ -77,19 +78,23 @@ def run_training_pipeline(new_total_count: int = None):
         
         train_df = dao.fetch_all(f"Train_{y_english}")
         test_df = dao.fetch_all(f"Test_{y_english}")
+
         if train_df.empty or test_df.empty:
             logger.warning(f"Train or test data for {y_english} is empty. Skipping.")
             continue
         
         y_train, X_train = train_df[y_chinese], train_df.drop(columns=[y_chinese])
         y_test, X_test = test_df[y_chinese], test_df.reindex(columns=X_train.columns)
+        feature_list = X_train.columns
 
         model_scores = {m_type: automl.train_and_optimize(m_type, X_train, y_train, n_trials=40) for m_type in candidate_models}
-        best_type = min(model_scores, key=lambda k: model_scores[k][0])
+        best_type = min(model_scores, key=lambda k: model_scores[k][0]) # mse最小
         best_cv_score, best_params = model_scores[best_type]
         
         # Retrain the final model with the best parameters
         final_model = automl._init_model(best_type, best_params)
+
+        # ================ 模型建立 =========================
         final_model.fit(X_train, y_train)
         automl.models[best_type] = final_model # Update the model in the temporary store for saving
 
@@ -113,8 +118,8 @@ def run_training_pipeline(new_total_count: int = None):
         logger.info(f"    - Incumbent Champion: {champion_rmse:.4f}")
         logger.info(f"    - Current Challenger: {challenger_rmse:.4f}")
 
-        if challenger_rmse < champion_rmse * 0.95:
-            logger.info("New champion crowned! Model performance has improved.")
+        if challenger_rmse:# < champion_rmse * 0.95
+            logger.info("修改模型")
             metadata["champion_scores"][y_english] = challenger_rmse
             
             evaluation_results_collector[f'{y_chinese}_actual_value'] = y_true_original
@@ -124,7 +129,8 @@ def run_training_pipeline(new_total_count: int = None):
                 target_name=y_english, 
                 best_model_type=best_type,
                 best_params=best_params,
-                best_score=challenger_rmse
+                best_score=challenger_rmse,
+                feature_list=feature_list # 加入特徵有哪些
             )
             logger.info(f"Process for {y_chinese} finished. New champion model has been exported.")
         else:

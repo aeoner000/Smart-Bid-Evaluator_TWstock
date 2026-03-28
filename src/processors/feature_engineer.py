@@ -93,72 +93,64 @@ class FeatureEngineer:
         split_idx = int(len(df_dev) * 0.8)
         train_base, test_base = df_dev.iloc[:split_idx], df_dev.iloc[split_idx:]
         
-        # --- 階段一：全域偏態轉換 (用於 Feature Selection) ---
+        # --- 【核心優化】在進入迴圈前完成所有 X 的轉換 ---
         logger.info("Starting global skew transformation...")
         global_x_st = SkewTransformer().fit(train_base[X_COLS])
+        
+        # 直接把所有資料轉好
         X_train_ref = global_x_st.transform(train_base[X_COLS])
+        X_test_ref = global_x_st.transform(test_base[X_COLS])
+        
+        if not df_pred.empty:
+            # 預測表也一次轉好，包含所有欄位
+            df_pred_trans = global_x_st.transform(df_pred)
+            self.dao.save_data(df_pred_trans, "Predict_table", if_exists="replace")
+        else:
+            empty_df = pd.DataFrame(columns=df.columns)
+            self.dao.save_data(empty_df, "Predict_table", if_exists="replace")
 
-        all_selected_features, all_skew_transformer, all_y_skew_transformer = {}, {}, {}
+        all_selected_features, all_y_skew_transformer = {}, {}
 
+        # 3. 進入 Target 迴圈
         for y in Y_COLS:
             try:
                 logger.info(f"Processing Target: {y}")
                 y_eng = TABLE_NAME_MAP[y]
 
-                # 1. 訓練目標變數 Y 的轉換器
+                # 轉換 Y
                 y_st = SkewTransformer().fit(train_base[[y]])
                 y_train_trans = y_st.transform(train_base[[y]])
                 y_test_trans = y_st.transform(test_base[[y]])
 
-                # 2. 特徵選擇
+                # 特徵選擇 (使用已經轉好的 X_train_ref)
                 selector = FeatureSelector(n_selected=30)
                 selector.fit(X_train_ref.join(y_train_trans), X_COLS, y) 
                 f_selected = selector.selected_features
-
-                # 3. 正式轉換器 (針對選出的 30 個特徵重新 Fit)
-                final_x_st = SkewTransformer().fit(train_base[f_selected])
                 
-                # 4. 儲存訓練與測試集 (包含選中的 X 與 轉換後的 Y)
-                train_out = final_x_st.transform(train_base[f_selected]).join(y_train_trans)
-                test_out = final_x_st.transform(test_base[f_selected]).join(y_test_trans)
+                # 儲存 Train/Test (直接從轉好的 X_ref 裡面挑)
+                train_out = X_train_ref[f_selected].join(y_train_trans)
+                test_out = X_test_ref[f_selected].join(y_test_trans)
                 
                 self.dao.save_data(train_out, f"Train_{y_eng}", if_exists="replace")
                 self.dao.save_data(test_out, f"Test_{y_eng}", if_exists="replace")
 
-                # 5. 【核心邏輯】處理預測資料 (Predict Table)
-                if not df_pred.empty:
-                    # 如果有待預測資料，轉換後存入
-                    df_pred = df_pred.copy()
-                    df_pred[f_selected] = final_x_st.transform(df_pred[f_selected])
-                    p_out = df_pred[ID_COLS + f_selected]
-                    # 依據你的需求，預測表通常不需要 y，但如果需要空欄位可以 join
-                    self.dao.save_data(p_out, f"Predict_{y_eng}", if_exists="replace")
-                else:
-                    # 如果沒有待預測資料，存一張只有欄位名稱的「空表」
-                    empty_cols = f_selected + [y]
-                    empty_df = pd.DataFrame(columns=empty_cols)
-                    self.dao.save_data(empty_df, f"Predict_{y_eng}", if_exists="replace")
-                    logger.warning(f"No prediction data found. Created an empty table for {y_eng}.")
-
-                # 6. 紀錄轉換器物件與名單
+                # 紀錄
                 all_selected_features[y] = f_selected
-                all_skew_transformer[y] = final_x_st
                 all_y_skew_transformer[y] = y_st
 
             except Exception as e:
                 logger.error(f"Failed to process target {y}: {e}", exc_info=True)
-        if all_selected_features: # 至少有一個成功才存檔
+
+        # 4. 儲存 Joblib (全域 X 轉換器只需存一份)
+        if all_selected_features:
             try:
-                self.storage.save_file(all_selected_features, str(Path(self.skew_path).parent / "all_selected_features.joblib"))
-                self.storage.save_file(all_skew_transformer, str(Path(self.skew_path).parent / "all_skew_transformer.joblib"))
-                self.storage.save_file(all_y_skew_transformer, str(Path(self.skew_path).parent / "all_y_skew_transformer.joblib"))
-                logger.info("All transformers and feature lists have been saved successfully.")
+                save_dir = Path(self.skew_path).parent
+                self.storage.save_file(all_selected_features, str(save_dir / "all_selected_features.joblib"))
+                self.storage.save_file(global_x_st, str(save_dir / "global_skew_transformer.joblib")) # 改存這份
+                self.storage.save_file(all_y_skew_transformer, str(save_dir / "all_y_skew_transformer.joblib"))
+                logger.info("All files saved successfully.")
             except Exception as e:
                 logger.error(f"Failed to save joblib files: {e}", exc_info=True)
-        else:
-            logger.error("No target variables were processed successfully, skipping save.")
-            
-    
         
         return self
 

@@ -1,3 +1,5 @@
+# https://mopsov.twse.com.tw/server-java/t164sb01?step=1&CO_ID=4169&SYEAR=2025&SSEASON=4&REPORT_ID=C#Stateme 實際財報網址
+# https://doc.twse.com.tw/server-java/t57sb01 找最近財報日期
 import sys
 import time
 import random
@@ -145,7 +147,7 @@ class FinancialCrawler(BaseCrawler):
             # 檢查 report 是否為空或只包含 None
             if not report or all(value is None for value in report.values()):
                 return False, "Empty Report"
-            
+
             return True, report
 
         except Exception as e:

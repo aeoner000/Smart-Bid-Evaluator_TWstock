@@ -49,14 +49,15 @@ class TargetCrawler(BaseCrawler):
         # 修正：使用標準化的欄位名稱
         source_df['投標開始日'] = pd.to_datetime(source_df['投標開始日']).dt.tz_localize(None)
         source_df['撥券日期_上市_上櫃日期'] = pd.to_datetime(source_df['撥券日期_上市_上櫃日期'], 
-                                                        errors='coerce').dt.tz_localize(None)
-
+                                                        errors='coerce').dt.tz_localize(None).dt.floor('us')
+  
         # 修正：使用標準化的欄位名稱
         valid_df = source_df.dropna(subset=['證券代號', '投標開始日', '撥券日期_上市_上櫃日期'])
         self.list_date_lookup = pd.Series(
             valid_df['撥券日期_上市_上櫃日期'].values,
             index=pd.MultiIndex.from_frame(valid_df[["證券代號", "投標開始日"]])
         ).to_dict()
+
 
         self.raw_data_cache = source_df
         logger.info(f"Lookup resources initialized with {len(self.list_date_lookup)} entries.")
@@ -84,15 +85,16 @@ class TargetCrawler(BaseCrawler):
                 feature_cols=FEATURE_COLS
             )
             self.fm.add_usage(1)
-
+            print(f"y_df:{y_df}")
             if y_df is None or y_df.empty:
                 return False, "API 查無資料"
 
             y_cal_df = cal_y_feature(y_df, self.raw_data_cache, code, start_date)
-            
-            # 修正：使用標準化的欄位名稱
-            y_cal_df['撥券日期_上市_上櫃日期'] = list_date
 
+            # 修正：使用標準化的欄位名稱
+            list_date_ts = pd.Timestamp(list_date).floor('us')
+            y_cal_df['撥券日期_上市_上櫃日期'] = list_date_ts
+      
             result_dict = y_cal_df.iloc[0].to_dict()
             final_dict = {k: v for k, v in result_dict.items() if k not in self.key_cols}
             

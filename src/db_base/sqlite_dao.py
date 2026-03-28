@@ -66,7 +66,6 @@ class IPO_DAO_SQLite:
         if_exists: str = "append",
     ) -> None:
         df_cleaned = self._clean_dataframe(df.copy())
-
         if df_cleaned is None or df_cleaned.empty:
             logger.warning(f"表 {table_name} 清理後無資料可供存入。")
             return

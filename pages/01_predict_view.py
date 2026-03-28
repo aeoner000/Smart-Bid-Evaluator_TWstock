@@ -49,12 +49,14 @@ select_event = st.dataframe(
     ipo_df, use_container_width=True, hide_index=True,
     on_select="rerun", selection_mode="single-row", height=225
 )
+if not ipo_df.empty:
+    sel_idx = select_event.selection.rows[0] if select_event.selection.rows else 0
+    sel_stock = ipo_df.iloc[sel_idx]
+    target_code = str(sel_stock["證券代號"])
+else:
+    st.warning("目前暫無進行中的競拍標的")
+    st.stop() # 停止執行後續程式碼
 
-sel_idx = select_event.selection.rows[0] if select_event.selection.rows else 0
-sel_stock = ipo_df.iloc[sel_idx] # 取得資料表的使用者點選的股票
-
-
-target_code = str(sel_stock["證券代號"])
 predict_series = get_predict_result(target_code) # 輸出點選的股票的預測 series
 
 # 4. 第二區：AI 智慧預測 (與列表連動)
@@ -88,7 +90,7 @@ col_left, col_right = st.columns([7, 3], gap="large")
 base_info_series = get_base_info(target_code)
 
 with col_left:
-    st.markdown(f"### 基本面核心矩陣")
+    st.markdown('<div class="main-title">基本面核心矩陣</div>', unsafe_allow_html=True)
     m_cols = st.columns(3)
     
     # 這裡的迴圈邏輯完全不用動！
@@ -103,6 +105,7 @@ with col_left:
                 else:
                     display_val = f"{num_val:.2f}"
             except (ValueError, TypeError):
+                print(f"DEBUG: 欄位 '{label}' 數值異常，值為: '{val}' (型態: {type(val)})")
                 # 如果 val 是 "N/A"、None 或無法轉成數字的字串，就直接顯示原值或 "-"
                 display_val = str(val) if val is not None else "-"
             
@@ -115,7 +118,24 @@ with col_left:
                 ''', 
                 unsafe_allow_html=True
             )
-
+    st.markdown("""
+        <div style="
+            background-color: #f0f9ff; 
+            border: 1px solid #bae6fd; 
+            border-radius: 8px; 
+            padding: 12px 15px; 
+            margin-top: 10px;
+        ">
+            <div style="color: #0369a1; font-size: 0.85rem; font-weight: 700; margin-bottom: 8px;">
+                💡 預測邏輯公式說明
+            </div>
+            <div style="color: #0c4a6e; font-size: 0.9rem; line-height: 1.6;">
+                • <b>預估最低中標價格</b> = 最低投標價 × (1 + 預估最低得標加價率)<br>
+                • <b>預估平均中標價格</b> = 最低投標價 × (1 + 預估加權平均加價率)<br>
+                • <b>預估上市開盤價</b> &nbsp;&nbsp;= 最低投標價 × (1 + 預估獲利率)
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
 imp_features = get_feature_important() # df
 def create_rank_list(feature_list, color):
     # 確保只取前 5 個，不足補 N/A

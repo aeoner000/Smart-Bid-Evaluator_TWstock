@@ -191,5 +191,5 @@ def get_time():
     df = get_core_table("bid_info")
     if not df.empty and 'update_time' in df.columns:
         # 取得 update 欄位中的最大值（最新時間）
-        return df['update_time'].max()
+        return df['update_time'].max().strftime('%Y-%m-%d %H:%M:%S')
     return None

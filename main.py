@@ -12,7 +12,7 @@ import argparse
 from pathlib import Path
 import pandas as pd
 import json
-import logging
+import logging, time
 
 # --- Logger 設定 ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -144,27 +144,33 @@ def run_crawling_stage():
             keys_to_promote = feature_tasks_df[feature_tasks_df['投標開始日'] <= today]
             if not keys_to_promote.empty:
                 promote_pivotal_keys = list(keys_to_promote[['證券代號', '投標開始日']].itertuples(index=False, name=None))
-                dao.update_status_by_keys(table_name="bid_info", keys=promote_pivotal_keys, new_status="features_complete")
+                dao.update_status_by_keys(keys=promote_pivotal_keys, new_status="features_complete")
             else:
                 logger.info("今日無任何任務達到投標日，無需晉升狀態。")
 
-        except Exception as e:
-            logger.error(f"第一站執行失敗: `{e}` !!!")
-            logger.info("--- 偵測到錯誤，正在啟動資料回滾程序 ---")
+        except (Exception, KeyboardInterrupt) as e:
+            is_kb_interrupt = isinstance(e, KeyboardInterrupt)
+            logger.error(f"第一站執行{'中斷' if is_kb_interrupt else '失敗'}: `{e}` !!!")
+            logger.info("--- 偵測到錯誤，正在啟動第一站資料與狀態回滾程序 ---")
+            
             table_names_to_rollback = [worker.table_name for worker in feature_workers]
             try:
                 for table in table_names_to_rollback:
-                    # 在回滾中也同樣處理 Table Not Found 的情況
                     try:
                         dao.delete_by_keys(table_name=table, keys_to_delete=pivotal_keys)
                     except Exception as rollback_del_e:
                         if 'not found' in str(rollback_del_e).lower():
-                            logger.info(f"(回滾中) 資料表 `{table}` 不存在，無需刪除。")
-                        else:
-                            raise rollback_del_e
-                logger.info("--- 資料回滾成功 ---")
+                            continue
+                        raise rollback_del_e
+      
+                # --- 修改點：新增狀態回滾，確保下次執行會重新爬取 ---
+                dao.update_status_by_keys(keys=pivotal_keys, new_status="crawling")
+                logger.info("--- 第一站回滾(含狀態重設)成功 ---")
             except Exception as rollback_e:
-                logger.critical(f"CRITICAL: 資料回滾程序本身也失敗了: {rollback_e} !!!")
+                logger.critical(f"CRITICAL: 第一站回滾程序本身也失敗了: {rollback_e} !!!")
+            
+            if is_kb_interrupt:
+                sys.exit(1)
 
     # =====================================================================
     # 第二站：目標爬取 (Target Crawling Station)
@@ -195,15 +201,22 @@ def run_crawling_stage():
             logger.info(f"{target_worker.table_name} 已成功完成本批次任務。")
 
             # 6. 狀態晉升：將完成目標爬取的任務更新為 all_complete
-            dao.update_status_by_keys(table_name="bid_info", keys=target_pivotal_keys, new_status="all_complete")
-        except KeyboardInterrupt:
-            logger.warning("偵測到使用者手動中斷 (Ctrl+C)！正在緊急執行資料回滾...")
-            # 這裡放你的回滾代碼，例如刪除已寫入的部分資料
-            dao.delete_by_keys(table_name="target_variable", keys_to_delete=target_pivotal_keys)
-            logger.info("--- 緊急回滾完成 ---")
-            sys.exit(1) # 讓程式正式退出
-        except Exception as e:
-            logger.error(f"第二站執行失敗: `{e}` !!!")
+            dao.update_status_by_keys(keys=target_pivotal_keys, new_status="all_complete")
+        except (Exception, KeyboardInterrupt) as e:
+            is_kb_interrupt = isinstance(e, KeyboardInterrupt)
+            logger.error(f"第二站執行{'中斷' if is_kb_interrupt else '失敗'}: `{e}` !!!")
+            logger.info("--- 正在啟動第二站資料回滾程序 ---")
+            try:
+                # 回滾已寫入的目標變數
+                dao.delete_by_keys(table_name=target_worker.table_name, keys_to_delete=target_pivotal_keys)
+                # --- 修改點：確保狀態退回 features_complete，讓下次執行直接從第二站續跑 ---
+                dao.update_status_by_keys(keys=pivotal_keys, new_status="features_complete")
+                logger.info("--- 第二站回滾(含狀態保持)成功 ---")
+            except Exception as rollback_e:
+                logger.critical(f"CRITICAL: 第二站回滾程序本身也失敗了: {rollback_e} !!!")
+            
+            if is_kb_interrupt:
+                sys.exit(1)
 
     logger.info("--- [階段 1: 爬蟲工作] 執行完畢 ---")
 
@@ -255,7 +268,8 @@ def run_prediction_stage():
         raise
 
 def main():
-    parser = argparse.ArgumentParser(description="專案總指揮官，管理資料科學流程。")
+    start = time.time()
+    parser = argparse.ArgumentParser(description="流程管理")
     parser.add_argument(
         'stages',
         nargs='*',
@@ -305,5 +319,10 @@ def main():
                 logger.info("✅ GCS 連線已釋放。")
         except Exception as e:
             logger.warning(f"釋放 GCS 資源時出錯: {e}")
+    end = time.time()
+    duration = end - start
+    minutes = int(duration // 60)
+    seconds = int(duration % 60)
+    print(f"========================== 總共耗時: {minutes} 分 {seconds} 秒 ===========================")
 if __name__ == "__main__":
     main()

@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from plotly.subplots import make_subplots
 
-from streamlit_unit.query_func import get_all_avg_pred_diff, get_sample_size, get_update_time
+from streamlit_unit.query_func import get_all_avg_pred_diff, get_sample_size, get_time
 
 
 
@@ -20,12 +20,13 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
+last_reboot = get_time()
 # 建立三欄佈局，第一欄放標題，後兩欄放數據
 head_col, kpi1, kpi2 = st.columns([3, 1, 1])
 with head_col:
     st.markdown(f"""
         <h1 style="margin-bottom: 0px; font-weight: 900;">系統首頁</h1>
-        <p style="color: #666; font-size: 0.9rem;">最後更新：{{last_reboot}} | 每日爬蟲更新</p>
+        <p style="color: #666; font-size: 0.9rem;">最後更新：{last_reboot} | 每日爬蟲更新</p>
     """, unsafe_allow_html=True)
 
 with kpi1:
@@ -135,10 +136,10 @@ pipeline_text = """
     本系統建構了一套全自動數據流水線，將零散資訊轉化為精準的投標指引：<br>
     <br>
     <b>1. 全自動數據監控（數據收集）</b><br>
-    系統如同 24 小時偵測器，每日自動追蹤<b>證交所</b>與<b>公開資訊觀測站</b>。同步擷取新股公告、財務體質（獲利與營收）及市場熱度（股價與法人動向），並整合歷年歷史得標紀錄，確保資料權威且完整。<br>
+    系統每日自動追蹤<b>證交所、公開資訊觀測站、櫃買中心</b>並同時取得<b>Yahoo Finance、Finmind</b>等 API 來源。同步擷取新股公告、財務體質（獲利與營收）及市場熱度（股價與法人動向），並整合歷年歷史得標紀錄，確保資料權威且完整。<br>
     <br>
     <b>2. 深度特徵加工（數據提煉）</b><br>
-    原始資料經由 AI 引擎深度加工，提煉出成長動能、獲利穩定性等上百項量化指標。透過自動化清洗與異常值修正，將數據轉化為高品質的「特徵燃料」，驅動 <b>XGBoost</b> 等先進模型，助您掌握科學化的競拍勝機。
+    原始資料經由完整爬蟲、API 之數據提取，預處理流程提煉出成長動能、獲利穩定性等數十項量化指標。透過自動化清洗與異常值修正，將數據轉化為高品質的「特徵燃料」，驅動 <b>XGBoost</b> 等機器學習模型，助您掌握科學化的競拍勝機。
     """
 
 model_intro_text = """

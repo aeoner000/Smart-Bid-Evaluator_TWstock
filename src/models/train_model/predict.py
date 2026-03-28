@@ -2,7 +2,7 @@ import sys
 import logging
 from pathlib import Path
 import pandas as pd
-
+from functools import reduce
 # --- 路徑處理 ---
 try:
     root_path = Path(__file__).resolve().parents[3]
@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 WEIGHTS_DIR = config['paths']['weights_dir']
 FE_cfg = config["feature_engineer"]
 FC_cfg = FE_cfg["feature_cols"]
+X_COLS = FC_cfg["x_features"]
 Y_COLS = FC_cfg["target_variables"]
 TABLE_NAME_MAP = FC_cfg["target_variables_map"]
 ID_COLS = FC_cfg["id_cols"]
@@ -38,16 +39,15 @@ class Predictor:
         self.storage_handler = get_storage_handler()
         self.models = {}
         self.y_transformers = {}
-        self.all_selected_features = None
-
+        self.all_selected_features = {}
+        self.global_x_transformer = None
         self._load_artifacts()
 
     def _load_artifacts(self):
         logger.info("Loading prediction artifacts...")
         try:
-            features_path = f"{WEIGHTS_DIR}/all_selected_features.joblib"
-            self.all_selected_features = self.storage_handler.load_file(features_path)
-
+            x_skew_path = f"{WEIGHTS_DIR}/global_skew_transformer.joblib"
+            self.global_x_transformer = self.storage_handler.load_file(x_skew_path)
             skew_path = f"{WEIGHTS_DIR}/all_y_skew_transformer.joblib"
             self.y_transformers = self.storage_handler.load_file(skew_path)
 
@@ -56,7 +56,9 @@ class Predictor:
                 model_path = f"{WEIGHTS_DIR}/{y_english}_best_model.joblib"
 
                 loaded_obj = self.storage_handler.load_file(model_path)
+ 
                 self.models[y_chinese] = loaded_obj['model']
+                self.all_selected_features[y_chinese] = loaded_obj['feature_list'] # 特徵叫進來
 
             logger.info(f"Successfully loaded {len(self.models)} models.")
 
@@ -75,18 +77,14 @@ class Predictor:
         selected_features
     ):
         try:
-            train_df = self.dao.fetch_all(f"Train_{y_english}")
-            test_df = self.dao.fetch_all(f"Test_{y_english}")
+            full_df = self.dao.fetch_all("all_features")
 
-            if train_df.empty and test_df.empty:
-                logger.warning(f"No Train/Test data for {y_chinese}")
+            combined_df = full_df[full_df["status"] == "all_complete"].copy()
+
+            if combined_df.empty:
+                logger.warning(f"No completed data found in all_features for {y_chinese}")
                 return {}
-
-            combined_df = pd.concat(
-                [train_df, test_df],
-                axis=0,
-                ignore_index=True
-            )
+            combined_df[X_COLS] = self.global_x_transformer.transform(combined_df[X_COLS])
 
             # ===== actual =====
             if y_chinese in combined_df.columns:
@@ -112,47 +110,37 @@ class Predictor:
                 # predict inverse
                 y_pred = transformer.inverse_transform(preds_series)
 
-                # actual inverse（防呆）
-                try:
-                    y_actual = transformer.inverse_transform(y_actual_series)
-                except Exception:
-                    y_actual = y_actual_series
             else:
                 y_pred = preds_series
-                y_actual = y_actual_series
+            y_actual = y_actual_series
 
             y_pred = y_pred.astype('float64').round(4)
 
+            res_df = combined_df[ID_COLS].copy().reset_index(drop=True)
+            res_df[f"{y_chinese}_actual_value"] = y_actual.reset_index(drop=True)
+            res_df[f"{y_chinese}_predicted_value"] = y_pred.reset_index(drop=True)
             # ✅ 完全對齊 training pipeline 命名
-            return {
-                f"{y_chinese}_actual_value": y_actual.reset_index(drop=True),
-                f"{y_chinese}_predicted_value": y_pred.reset_index(drop=True)
-            }
-
+            return res_df
+            
         except Exception as e:
             logger.error(f"Aggregation failed for {y_chinese}: {e}", exc_info=True)
             return {}
 
     def run(self):
         logger.info("Starting prediction pipeline...")
+        evaluation_results_list = []
 
-        # ✅ collector（與 training pipeline 一致）
-        evaluation_results_collector = {}
+        global_pred_data = self.dao.fetch_all("Predict_table")
+        if global_pred_data.empty:
+            logger.warning("Predict_table is empty, task aborted.")
+            return
 
         for y_chinese in Y_COLS:
             try:
                 y_english = TABLE_NAME_MAP[y_chinese]
                 logger.info(f"Processing target: {y_chinese}")
 
-                # =========================
-                # 原本流程（完全不動）
-                # =========================
-                pred_table_name = f"Predict_{y_english}"
-                pred_data = self.dao.fetch_all(pred_table_name)
-
-                if pred_data.empty:
-                    logger.info(f"No data in '{pred_table_name}', skipping.")
-                    continue
+                pred_data = global_pred_data.copy()
 
                 model = self.models[y_chinese]
                 selected_features = self.all_selected_features[y_chinese]
@@ -160,11 +148,7 @@ class Predictor:
                 X_pred = pred_data[selected_features]
                 preds_transformed = model.predict(X_pred)
 
-                preds_series = pd.Series(
-                    preds_transformed.flatten(),
-                    index=pred_data.index,
-                    name=y_chinese
-                )
+                preds_series = pd.Series(preds_transformed.flatten(), index=pred_data.index, name=y_chinese)
 
                 transformer = self.y_transformers.get(y_chinese)
                 if transformer:
@@ -182,17 +166,17 @@ class Predictor:
 
                 logger.info(f"Saved '{result_table_name}'.")
 
-                # =========================
-                # ✅ NEW FEATURE（統一 collector）
-                # =========================
+                # ========================= # 拿模型回去預測全部資料集
                 agg_result = self._aggregate_train_test_to_dict(
                     y_chinese,
                     y_english,
                     model,
                     selected_features
                 )
+                
+                if isinstance(agg_result, pd.DataFrame) and not agg_result.empty:
+                    evaluation_results_list.append(agg_result)
 
-                evaluation_results_collector.update(agg_result)
 
             except Exception as e:
                 logger.error(f"Error processing {y_chinese}: {e}", exc_info=True)
@@ -201,26 +185,20 @@ class Predictor:
         # =========================
         # ✅ FINAL SAVE（完全對齊 training pipeline）
         # =========================
-        if evaluation_results_collector:
+        if len(evaluation_results_list) == 3:
             try:
-                logger.info("Consolidating prediction results for all targets...")
-
-                final_df = pd.concat(
-                    evaluation_results_collector.values(),
-                    axis=1
-                )
-                final_df.columns = list(evaluation_results_collector.keys())
-
-                self.dao.save_data(
-                    final_df,
-                    "predict_all",
-                    if_exists="replace"
+                logger.info("Merging all targets by ID columns (Security ID & Time)...")
+                
+                # 使用 reduce 依序對 list 中的所有 DataFrame 執行 merge
+                final_df = reduce(
+                    lambda left, right: pd.merge(left, right, on=ID_COLS, how='outer'), 
+                    evaluation_results_list
                 )
 
-                logger.info("Successfully saved predict_all table.")
-
+                self.dao.save_data(final_df, "predict_all", if_exists="replace")
+                logger.info("Successfully merged and saved predict_all.")
             except Exception as e:
-                logger.error(f"Error saving predict_all: {e}", exc_info=True)
+                logger.error(f"Error merging predict_all: {e}", exc_info=True)
         else:
             logger.warning("No aggregated results to save.")
 

@@ -72,7 +72,7 @@ ml_model_environment:
       static_params:
         objective: "reg:squarederror"
         eval_metric: "rmse"
-        n_estimators: 300          # 長線迭代，配合早停機制
+        n_estimators: 300       
         random_state: 42
         verbosity: 0
       search_space:
@@ -88,7 +88,7 @@ ml_model_environment:
         loss_function: "RMSE"
         iterations: 500            # 給予充足的優化回合
         logging_level: 'Silent'     # 加上這行，保持輸出乾淨
-        random_seed: 42
+        random_state: 42
         allow_writing_files: False
       search_space:
         depth: { type: "int", low: 3, high: 5 }              # 淺層策略，過濾市場噪音
@@ -147,11 +147,11 @@ crawlers:
         - "淨收益"
         - "收益"
       "本期淨利":
-        - "母公司業主_淨利_損"
-        - "本期稅後淨利_損_歸屬於母公司業主"
+        - "母公司業主（淨利／損）"
+        - "本期稅後淨利（損）歸屬於母公司業主"
         - "母公司業主"
-        - "母公司業主_淨利_損"
-        - "本期淨利_淨損"
+        - "母公司業主（淨利／損）"
+        - "本期淨利（淨損）"
         - "本期淨利"
       "每股盈餘":
         - "基本每股盈餘合計"

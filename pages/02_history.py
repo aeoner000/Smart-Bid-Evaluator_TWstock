@@ -59,7 +59,7 @@ with tab_backtest:
         return fig
     c1, c2 = st.columns(2)
     with c1: st.plotly_chart(plot_bt("最低得標加價率", "#f97316", "最低得標加價率"), use_container_width=True)
-    with c2: st.plotly_chart(plot_bt("最低得標加價率", "#2563eb", "最低得標加價率"), use_container_width=True)
+    with c2: st.plotly_chart(plot_bt("平均加權得標率", "#2563eb", "最低得標加價率"), use_container_width=True)
     st.plotly_chart(plot_bt("預估獲利率", "#10b981", "預估獲利率"), use_container_width=True)
 
 # --- [模組 B：市場宏觀統計] ---
@@ -154,6 +154,7 @@ with tab_macro:
             ))
 
             # 6. 統計資訊框 (Annotation)
+            p_text = "顯著(p<0.05)" if p_val<0.05 else "不顯著(p>0.05)"
             fig.add_annotation(
                 xref="paper", yref="paper", 
                 x=1, y=1.05, # 定位在圖表右上角上方
@@ -161,7 +162,7 @@ with tab_macro:
                 text=(
                     f"判定係數 <b>R² : {r_sq:.4f}</b><br>"
                     f"相關係數 <b>R : {r_val:.3f}</b><br>"
-                    f"P-Value : <b>{p_val:.2e}</b>"
+                    f"P-Value : <b>{p_text}</b>"
                 ),
                 showarrow=False, align="left",
                 bgcolor="rgba(255, 255, 255, 0.8)",
@@ -240,15 +241,17 @@ with tab_macro:
 
         ts_data = df.resample(freq_map[time_dim])[col_map.get(target_feat)].agg(agg_map[op_type])
         unit = "%" if any(word in target_feat for word in ["率", "百分比", "ROE", "ROA"]) else ""
+        if time_dim == "月":
+            ts_data.index = ts_data.index.strftime('%Y-%m') # 變成 "2026-03"
+        elif time_dim == "季":
+            ts_data.index = ts_data.index.to_period("Q").astype(str) # 變成 "2026Q1"
+        else: # 年
+            ts_data.index = ts_data.index.strftime('%Y') # 變成 "2026"
         fig_ts = go.Figure(go.Bar(x=ts_data.index, y=ts_data.values, marker_color='#f97316', 
                                     hovertemplate=f"數值: %{{y:.2f}}{unit}<extra></extra>"))
-        plotly_dtick_map = {"年": "M12", "季": "M3", "月": "M1"}
-        format_map = {"年": "%Y", "季": "Q%q %Y", "月": "%m/%Y"}
         fig_ts.update_xaxes(
-            tickformat=format_map[time_dim],
-            dtick=plotly_dtick_map[time_dim], # 確保刻度與你的聚合頻率對齊
-            type='date',              # 確保 Plotly 將其視為時間軸
-            tickangle=-90             # 旋轉避免重疊
+            type='category', # 強制轉為類別軸，這就不會出現「沒數據的月份」
+            tickangle=-70
         )
         # 1. 定義 Plotly 控制按鈕與縮放設定
         chart_config = {

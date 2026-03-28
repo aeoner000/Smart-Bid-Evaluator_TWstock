@@ -34,7 +34,7 @@ class BaseCrawler(ABC):
         
         # 待辦：TABLE_SCHEMAS 仍是硬式編碼，未來可改由 DAO 提供欄位資訊
         self.all_cols = [col[0] for col in TABLE_SCHEMAS[self.table_name]]
-
+        
     @abstractmethod
     def process_task(self, code: str, start_date: pd.Timestamp) -> tuple[bool, dict | str]:
         """
@@ -52,20 +52,38 @@ class BaseCrawler(ABC):
         final_df = pd.DataFrame()
         if success_list:
             success_df = pd.DataFrame(success_list)
-            if hasattr(self, 'calculate_ratios'):
+            if "證券代號" in success_df.columns:
+                success_df["證券代號"] = success_df["證券代號"].astype(str)
+            if hasattr(self, 'calculate_ratios'): #　檢查這個self裡面，有沒有一個叫做 'calculate_ratios' 的方法或屬性-->fin 中的
                 cols_to_fix = [c for c in self.all_cols if c in success_df.columns and c not in self.key_cols]
                 success_df[cols_to_fix] = success_df[cols_to_fix].apply(pd.to_numeric, errors='coerce')
                 success_df = self.calculate_ratios(success_df)
             final_df = pd.concat([final_df, success_df], ignore_index=True)
-        if fail_list:
+
+        if fail_list:         
             fail_df = pd.DataFrame(fail_list, columns=self.key_cols)
+
             fail_df = fail_df.reindex(columns=self.all_cols)
             final_df = pd.concat([final_df, fail_df], ignore_index=True)
         if not final_df.empty:
-            for col in self.all_cols:
-                if col not in self.key_cols and col in final_df.columns:
+            actual_date_cols = [c for c in final_df.columns 
+                                if any(key in c for key in ["日期", "開始日", "結束日", "update_time"])]
+            for col in final_df.columns:
+                if col in actual_date_cols:
+                    # 日期處理：強制截斷到微秒 [us] 精度
+                    final_df[col] = pd.to_datetime(final_df[col], errors='coerce') \
+                                      .dt.tz_localize(None).dt.floor('us').astype('datetime64[us]')
+                
+                elif col == "證券代號":
+                    # 證券代號處理：絕對要是字串 (String)
+                    final_df[col] = final_df[col].astype(str)
+                
+                elif col not in self.key_cols:
+                    # 數值處理：其餘獲利率、成交量等才轉 Numeric
                     final_df[col] = pd.to_numeric(final_df[col], errors='coerce')
+
             self.dao.save_data(final_df, self.table_name, if_exists="append")
+  
             success_count = len(success_list)
             fail_count = len(fail_list)
             print(f"✅ 存檔操作完成。處理成功: {success_count} 筆, 標記失敗: {fail_count} 筆。")

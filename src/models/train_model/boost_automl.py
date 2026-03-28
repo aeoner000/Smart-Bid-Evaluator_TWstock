@@ -31,6 +31,7 @@ class BoostAutoMLManager:
         self.models = {}               # 模型暫存
         self.y_skew_trans = y_skew_transformers # 從外部傳入，不再自己讀取
         self.storage = get_storage_handler() # 初始化儲存工具
+        self.random_seed = 100
         logger.info("BoostAutoMLManager initialized with y-skew transformers.")
 
 
@@ -45,6 +46,8 @@ class BoostAutoMLManager:
         ''' Optuna 優化目標函數 '''
         model_cfg = self.config['models'][model_type]
         params = model_cfg['static_params'].copy()
+        params['random_state'] = self.random_seed
+
         
         # 1. 動態生成搜尋空間
         for p_name, space in model_cfg['search_space'].items():
@@ -128,7 +131,8 @@ class BoostAutoMLManager:
         return study.best_value, final_params
 
 
-    def save_best_target_model(self, target_name: str, best_model_type: str, best_params: dict, best_score:float):
+    def save_best_target_model(self, target_name: str, best_model_type: str, best_params: dict, 
+                                best_score:float,feature_list:list):
         """
         儲存字典中目標變數對應的模型，他是已經在外部比較確認過的
         """
@@ -147,7 +151,8 @@ class BoostAutoMLManager:
             'model': winner_model,
             'model_type': best_model_type,
             'best_params': best_params,
-            'best_score':  best_score
+            'best_score':  best_score,
+            'feature_list': feature_list
         }
         
         try:

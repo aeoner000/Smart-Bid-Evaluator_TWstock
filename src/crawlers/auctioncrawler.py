@@ -117,7 +117,7 @@ class AuctionCrawler:
 
         # D. 補齊時間戳記與移除不必要欄位
         if "update_time" not in df.columns:
-            df["update_time"] = pd.Timestamp.now(tz="Asia/Taipei").normalize()
+            df["update_time"] = pd.Timestamp.now(tz="Asia/Taipei")
 
         if "序號" in df.columns:
             df.drop(columns="序號", inplace=True)

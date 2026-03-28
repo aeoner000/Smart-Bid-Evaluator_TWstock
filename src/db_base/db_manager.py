@@ -1,9 +1,9 @@
-
 from src.utils.config_loader import config
 from src.db_base.sqlite_dao import IPO_DAO_SQLite
 from src.db_base.bigquery_dao import IPO_DAO_BigQuery
 import logging
-
+# 加入這兩行定義 logger
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 def get_db_manager():
