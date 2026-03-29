@@ -13,12 +13,18 @@ COPY requirements.txt .
 # 修正重點：不要在 uninstall 時使用 --prefix
 # 我們直接在 builder 環境安裝，刪除完垃圾後，再複製 site-packages
 RUN pip install --no-cache-dir -r requirements.txt && \
+    # 一次清空所有 GPU、繪圖相關以及執行時不需要的開發套件
     pip uninstall -y \
     nvidia-nccl-cu12 \
     pydeck \
     matplotlib \
     fontTools \
-    seaborn && \
+    seaborn \
+    kiwisolver \
+    jedi \
+    setuptools && \
+    # 強制刪除編譯殘留檔
+    find /usr/local/lib/python3.11/site-packages -name "__pycache__" -type d -exec rm -rf {} + && \
     rm -rf /root/.cache/pip
 
 # === 第二階段：最終運行環境 (Final) ===
