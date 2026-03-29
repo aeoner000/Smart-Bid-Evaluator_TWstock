@@ -13,8 +13,12 @@ COPY requirements.txt .
 # 修正重點：不要在 uninstall 時使用 --prefix
 # 我們直接在 builder 環境安裝，刪除完垃圾後，再複製 site-packages
 RUN pip install --no-cache-dir -r requirements.txt && \
-    pip uninstall -y nvidia-nccl-cu12 && \
-    # 清理緩存
+    pip uninstall -y \
+    nvidia-nccl-cu12 \
+    pydeck \
+    matplotlib \
+    fontTools \
+    seaborn && \
     rm -rf /root/.cache/pip
 
 # === 第二階段：最終運行環境 (Final) ===
