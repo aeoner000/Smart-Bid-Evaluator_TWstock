@@ -31,7 +31,7 @@ class BoostAutoMLManager:
         self.models = {}               # 模型暫存
         self.y_skew_trans = y_skew_transformers # 從外部傳入，不再自己讀取
         self.storage = get_storage_handler() # 初始化儲存工具
-        self.random_seed = 100
+        self.random_seed = 4971
         logger.info("BoostAutoMLManager initialized with y-skew transformers.")
 
 
