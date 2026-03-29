@@ -118,7 +118,7 @@ def run_training_pipeline(new_total_count: int = None):
         logger.info(f"    - Incumbent Champion: {champion_rmse:.4f}")
         logger.info(f"    - Current Challenger: {challenger_rmse:.4f}")
 
-        if challenger_rmse:# < champion_rmse * 0.95
+        if challenger_rmse < champion_rmse * 0.95:
             logger.info("修改模型")
             metadata["champion_scores"][y_english] = challenger_rmse
             
