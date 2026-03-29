@@ -2,7 +2,7 @@
 FROM python:3.11-slim AS builder
 WORKDIR /app
 
-# 安裝編譯所需的系統工具 (CatBoost 和 XGBoost 安裝時需要)
+# 安裝編譯所需的系統工具
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libgomp1 \
@@ -10,23 +10,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 
-# 1. 安裝所有套件
-# 2. 強制刪除那個 384MB 的 nvidia 垃圾
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt && \
-    pip uninstall -y --prefix=/install nvidia-nccl-cu12
+# 修正重點：不要在 uninstall 時使用 --prefix
+# 我們直接在 builder 環境安裝，刪除完垃圾後，再複製 site-packages
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip uninstall -y nvidia-nccl-cu12 && \
+    # 清理緩存
+    rm -rf /root/.cache/pip
 
 # === 第二階段：最終運行環境 (Final) ===
 FROM python:3.11-slim
 WORKDIR /app
 
-# 只複製瘦身後的套件
-COPY --from=builder /install /usr/local
+# 從 builder 階段把安裝好的套件目錄整份複製過來
+# 在 python-slim 中，路徑通常是 /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
-# 安裝運行 ML 框架必備的 Runtime 庫 (libgomp1 是必須的)
+# 安裝運行必備的 runtime 庫
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
+# 複製程式碼
 COPY . .
 
 ENV PYTHONDONTWRITEBYTECODE=1
