@@ -50,20 +50,35 @@ def get_sample_size():
 
 @st.cache_data(ttl=86400)
 def get_all_avg_pred_diff():
-    ''' 取得平均誤差 '''
+    ''' 取得平均誤差並以日期為 Index '''
+    # 1. 取得原始資料
     df = get_core_table("predict_all")
+    # 2. 將投標開始日轉為 Datetime 並設為 Index
+    if '投標開始日' in df.columns:
+        df['投標開始日'] = pd.to_datetime(df['投標開始日'])
+        df = df.set_index('投標開始日').sort_index() # 改用 sort_index() 排序時間
+
     actual_list = []
     pred_list = []
-    for name in df.columns:
-        name_ = name.split("_")[1]
-        if name_ == "actual":
-            actual_list.append(name)
-        else:
-            pred_list.append(name)
+
+    # 3. 分類預測與真實值欄位
+    for col in df.columns:
+        if "_" in col:
+            parts = col.split("_")
+            label = parts[1].lower()
+            if label == "actual":
+                actual_list.append(col)
+            else:
+                pred_list.append(col)
     result_df = pd.DataFrame(index=df.index)
-    result_df['真實值平均'] = df[actual_list].mean(axis=1)
-    result_df['預測值平均'] = df[pred_list].mean(axis=1)
-    result_df['平均誤差'] = result_df['預測值平均'] - result_df['真實值平均']
+    
+    if actual_list:
+        result_df['真實值平均'] = df[actual_list].mean(axis=1)
+    if pred_list:
+        result_df['預測值平均'] = df[pred_list].mean(axis=1)
+    
+    if actual_list and pred_list:
+        result_df['平均誤差'] = result_df['預測值平均'] - result_df['真實值平均']
     return result_df
 
 #=============================== 第二頁 ===============================
@@ -140,6 +155,9 @@ def get_feature_important():
 def get_history_predict(target_name):
     ''' 三個預測目標的歷史資料預測結果 '''
     df = get_core_table("predict_all")
+    if '投標開始日' in df.columns:
+        df['投標開始日'] = pd.to_datetime(df['投標開始日'])
+        df = df.set_index('投標開始日').sort_index()
     text = ["_actual_value", "_predicted_value"]
     name_list = []
     for t in text:

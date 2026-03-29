@@ -1,14 +1,15 @@
 # Smart Bid Evaluator TWstock
 
 台股競拍價格預測系統，透過自動化 ETL 流程整合多維度特徵數據，經過特徵工程與模型訓練產出預測結果。
+結果以 Streamlit UI 呈現，網址: https://smart-bid-evaluator-304192218654.asia-east1.run.app 
 
 ## 1. 系統概述
 
 ### 核心功能
 
-- **自動化資料擷取**: 多層爬蟲系統收集競拍資訊、財務報表、股價歷史、市場行情、營收數據
-- **特徵工程與處理**: 自動化資料清理、缺失值補值、偏態轉換、特徵選擇
-- **模型訓練**: 條件觸發型訓練機制，支援多個預測目標的獨立模型
+- **自動化資料擷取**: 多層爬蟲系統收集競拍資訊、財務報表、股價歷史、市場行情、營收數據、歷史成交價
+- **特徵工程、歷史成交與處理**: 自動化資料清理、特徵建構、缺失值補值、偏態轉換、特徵選擇
+- **模型訓練**: 條件觸發型訓練機制，並支援多個預測目標的獨立模型
 - **預測與可視化**: 使用最新訓練模型產生預測，Streamlit 介面展示結果
 
 ### 架構設計原則
@@ -39,61 +40,69 @@ graph LR
 
 ```mermaid
 graph TD
-    A["爬蟲階段啟動"] --> B["AuctionCrawler<br/>讀取/更新競拍任務清單"]
-    B --> C["多特徵爬蟲並行執行"]
+    A["開始 (ETL Job)"] --> B["AuctionCrawler<br/>讀取任務清單"]
+    B --> B1{"更新狀態為 crawling"}
+    B1 --> C["PriceCrawler (股價)"]
+    C --> D["MarketCrawler (市場)"]
+    D --> E["FinancialCrawler (財務)"]
+    E --> F["RevenueCrawler (營收)"]
+
+    %% 錯誤處理與回滾
+    C -. 錯誤 .-> H["數據回滾<br/>刪除當次已爬數據<br/>狀態保持 crawling"]
+    D -. 錯誤 .-> H
+    E -. 錯誤 .-> H
+    F -. 錯誤 .-> H
+
+    F --> G["標記狀態為<br/>features_complete"]
     
-    C --> D["PriceCrawler<br/>股價歷史"]
-    C --> E["MarketCrawler<br/>市場行情"]
-    C --> F["FinancialCrawler<br/>財務報表"]
-    C --> G["RevenueCrawler<br/>營收數據"]
+    G --> I{"檢查：<br/>當前日期 >= 上市日期?"}
     
-    D --> H["數據回滾機制<br/>異常時清除部分數據"]
-    E --> H
-    F --> H
-    G --> H
+    I -- "否 (未上市)" --> END["停止流程<br/>等待下次排程"]
     
-    H --> I["TargetCrawler<br/>取得競拍結果"]
-    I --> J["所有資料寫入DB"]
+    I -- "是 (已上市)" --> J["TargetCrawler<br/>取得競拍結果"]
+    
+    J --> K["標記狀態為<br/>all_complete"]
+    K --> FIN["結束"]
 ```
 
 ### 2.3 資料處理管道
 
 ```mermaid
 graph TD
-    A["原始表讀入<br/>bid_info + 附屬表"] --> B["Pandas 合併<br/>left join 基於<br/>證券代號 + 投標期"]
+    A["原始表讀入<br/>bid_info + 其餘特徵爬蟲表"] --> B["Pandas 合併<br/>left join 基於<br/>證券代號 + 投標開始日"]
     B --> C["鏈式清理流水線"]
-    
+
     C --> C1["set_type<br/>資料型態轉換"]
     C --> C2["fill_nan<br/>缺失值補值"]
     C --> C3["add_is_miss<br/>標記缺失狀態"]
     C --> C4["add_new_feature<br/>衍生特徵計算"]
-    
+
     C1 --> D["產出 all_features"]
     C2 --> D
     C3 --> D
     C4 --> D
-    
+
     D --> E["儲存檢查點到DB"]
-    E --> F["SkewTransformer<br/>偏態轉換 per target"]
+    E --> F["SkewTransformer<br/>偏態轉換"]
     F --> G["FeatureSelector<br/>特徵選擇 per target"]
-    
-    G --> H["轉換器序列化<br/>保存為 .joblib"]
-    G --> I["產出訓練/測試/預測表<br/>Train_* / Test_* / Predict_*"]
+
+    G --> H["轉換器、特徵選擇list<br/>保存為 .joblib"]
+    G --> I["產出訓練/測試/預測表<br/>Train_* / Test_* / Predict_table"]
 ```
 
 ### 2.4 模型訓練階段
 
 ```mermaid
 graph TD
-    A["檢查新資料量"] --> B{是否≥門檻<br/>threshold?}
+    A["檢查新資料量"] --> B{是否≥門檻<br/>-預設新增30筆-}
     B -->|是| C["分割訓練集<br/>test_size: 0.2"]
     B -->|否| D["跳過訓練<br/>保留現有模型"]
-    
+
     C --> E["模型訓練<br/>XGBoost/LightGBM/CatBoost"]
-    E --> F["模型評估<br/>驗證集評分"]
+    E --> F["模型評估-自動化參數選擇<br/>驗證集評分"]
     F --> G["序列化模型<br/>保存為 .joblib"]
     G --> H["記錄訓練元數據<br/>training_metadata.json"]
-    
+
     D --> I["流程继续"]
     H --> I
 ```
@@ -106,7 +115,7 @@ graph TD
     B --> C["預測表應用轉換"]
     C --> D["模型推理"]
     D --> E["產出預測結果"]
-    E --> F["寫入DB預測表"]
+    E --> F["寫入DB結果表"]
 ```
 
 ### 2.6 異常處理機制
@@ -118,7 +127,7 @@ graph TD
     C --> D["刪除該批次<br/>部分下載的資料"]
     D --> E["記錄失敗原因"]
     E --> F["系統中止或重試"]
-    
+
     B -->|否| G["繼續下一爬蟲"]
     G --> H["數據整合完成"]
 ```
@@ -130,19 +139,19 @@ graph TD
 ### 3.1 端到端資料轉換
 
 | 階段 | 輸入 | 輸出 | 關鍵模組 |
-|------|----|------|---------|
+| --- | --- | --- | --- |
 | **Crawl** | (無) | 多張原始表 (bid_info, history_price, fin_stmts 等) | src/crawlers/* |
-| **Process** | 原始表 | all_features (寬表), Train_*/Test_*/Predict_* | src/processors/* |
+| **Process** | 原始表 | all_features (寬表), Train_*/Test_*/Predict_table | src/processors/* |
 | **Train** | Train_* / Test_* | 模型檔 + 轉換器檔 | src/models/train_model/* |
-| **Predict** | Predict_* + 模型檔 | 預測結果 | src/models/train_model/predict.py |
+| **Predict** | Predict_table + 模型檔 | 預測結果 | src/models/train_model/predict.py |
 
 ### 3.2 關鍵設計決策
 
 | 決策項 | 實踐方式 | 理由 |
-|------|--------|------|
+| --- | --- | --- |
 | **資料合併位置** | Pandas in-memory (應用層) | 降低 DB 負載，提升靈活性，中等規模下性能優 |
 | **缺失值標記** | add_is_miss 特徵 | 缺失本身為預測信號 |
-| **偏態轉換** | per-target 獨立转换器 | 金融資料常見偏態，提高模型穩定性 |
+| **偏態轉換** | per-target 獨立轉換器 | 金融資料常見偏態，提高模型穩定性 |
 | **特徵選擇** | per-target 獨立選擇 | 不同預測目標所需特徵組合不同 |
 | **轉換器序列化** | .joblib 儲存 | 確保訓練-預測一致性，消除 Training-Serving Skew |
 
@@ -150,16 +159,21 @@ graph TD
 
 ## 4. 技術棧
 
-| 層級 | 技術 | 版本範圍 |
-|-----|------|--------|
+| 層級 | 技術 | 說明 |
+| --- | --- | --- |
 | **語言** | Python | 3.9+ |
 | **資料處理** | Pandas, NumPy | 見 requirements.txt |
-| **爬蟲** | beautifulsoup4, curl_cffi, requests | 見 requirements.txt |
+| **爬蟲** | requests、lxml | 見 requirements.txt |
 | **機器學習** | scikit-learn, XGBoost, LightGBM, CatBoost | 見 requirements.txt |
 | **資料庫** | Google BigQuery / SQLite | 可配置切換 |
-| **雲儲存** | Google Cloud Storage | GCS 或本地存儲可選 |
+| **物件儲存** | Google Cloud Storage | GCS 或本地存儲可選 |
+| **程式儲存** | GitHub | 專案儲存 |
+| **CI/CD 平台** | Cloud Build | 由GitHub repo讀取最新推送並建立docker |
+| **容器倉庫** | [Artifact Registry](https://docs.cloud.google.com/artifact-registry/docs/overview?hl=zh-TW) | docker存放 |
+| **執行器** | Cloud Run | Serverless 任務觸，執行UI或爬蟲 |
+| **排程器** | Cloud Scheduler | 每日定期觸發Cloud Run Job 爬蟲 |
 | **UI** | Streamlit | 見 requirements.txt |
-| **工具** | FinMind API | 台股資料源 |
+| **工具** | FinMind API、yfinance | API 資料源 |
 
 ---
 
@@ -176,7 +190,7 @@ cd Smart-Bid-Evaluator_TWstock
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
 # 或
-venv\Scripts\activate      # Windows
+venv\\Scripts\\activate      # Windows
 
 # 安裝依賴
 pip install -r requirements.txt
@@ -191,11 +205,11 @@ cp config.yaml.example config.yaml
 ```
 
 編輯 `config.yaml` 設置：
+
 - `storage.type`: `gcs` 或 `local`
 - `database.type`: `bigquery` 或 `sqlite`
 - GCP 認證路徑 (若使用 BigQuery/GCS)
-
-2. **設置 GCP 認證** (如使用 BigQuery)
+1. **設置 GCP 認證** (如使用 BigQuery)
 
 ```bash
 # 將 GCP 服務帳戶金鑰放入
@@ -205,19 +219,20 @@ cp /path/to/gcp-auth.json json/gcp-auth.json
 
 ### 5.3 執行
 
-#### 選項 A: 完整流程 (依序執行所有階段)
+### 選項 A: 完整流程 (依序執行所有階段)
 
 ```bash
-python main.py --mode full
+python main.py
 ```
 
-#### 選項 B: 單一階段
-- **僅爬蟲**: `python main.py --mode crawl`
-- **僅處理**: `python main.py --mode process`
-- **僅訓練**: `python main.py --mode train`
-- **僅預測**: `python main.py --mode predict`
+### 選項 B: 單一階段
 
-#### 選項 C: 啟動 UI
+- **僅爬蟲**: `python main.py crawl`
+- **僅處理**: `python main.py process`
+- **僅訓練**: `python main.py train`
+- **僅預測**: `python main.py predict`
+
+### 選項 C: 啟動 UI
 
 ```bash
 streamlit run app.py
@@ -226,7 +241,7 @@ streamlit run app.py
 ### 5.4 主要入口檔
 
 | 檔案 | 用途 |
-|-----|------|
+| --- | --- |
 | `main.py` | 命令行協調器，調度各階段執行 |
 | `app.py` | Streamlit 主程式進入點 |
 | `pages/` | Streamlit 多頁應用 |
@@ -238,33 +253,33 @@ streamlit run app.py
 ### 6.1 爬蟲模組 (`src/crawlers/`)
 
 | 爬蟲 | 功能 | 輸出表 |
-|-----|------|--------|
-| `AuctionCrawler` | 初始化/更新競拍任務清單 | auction_tasks |
+| --- | --- | --- |
+| `AuctionCrawler` | 初始化/更新競拍任務清單 | bid_info |
 | `PriceCrawler` | 股價歷史資料 | history_price |
 | `MarketCrawler` | 市場行情指數 | market_info |
 | `FinancialCrawler` | 財務報表 (盈利、資產等) | fin_stmts |
 | `RevenueCrawler` | 營收數據 | revenue_info |
-| `TargetCrawler` | 競拍結果 (承銷價等) | bid_info (目標值填充) |
+| `TargetCrawler` | 競拍結果 (承銷價等) | target_variable |
 
 ### 6.2 處理模組 (`src/processors/`)
 
 | 模組 | 功能 | 輸入 | 輸出 |
-|-----|------|------|------|
-| `FeatureEngineer` | 資料合併、清理、特徵擴增 | 原始表 | all_features |
+| --- | --- | --- | --- |
+| `FeatureEngineer` | 資料合併、清理、特徵擴增 | 原始表 | all_features、各訓練預測用表 |
 | `SkewTransformer` | 學習並應用偏態轉換 | all_features | 轉換後資料 + .joblib 儲存 |
 | `FeatureSelector` | 基於相關性/重要性選擇特徵 | all_features | 特徵子集 + .joblib 儲存 |
 
 ### 6.3 模型模組 (`src/models/`)
 
 | 模組 | 功能 | 輸入 | 輸出 |
-|-----|------|------|------|
+| --- | --- | --- | --- |
 | `train.py` | 模型訓練管道 | Train_* / Test_* | 模型檔 (.joblib) |
-| `predict.py` | 預測推理 | Predict_* + 模型檔 | 預測結果 |
+| `predict.py` | 預測推理 | Predict_table* + 模型檔 | 預測結果 |
 
 ### 6.4 資料庫模組 (`src/db_base/`)
 
 | 模組 | 用途 |
-|-----|------|
+| --- | --- |
 | `db_manager.py` | DB 工廠類，返回 DAO 實例 |
 | `bigquery_dao.py` | BigQuery 讀寫操作 |
 | `sqlite_dao.py` | SQLite 讀寫操作 |
@@ -273,7 +288,7 @@ streamlit run app.py
 ### 6.5 工具模組 (`src/utils/`)
 
 | 模組 | 功能 |
-|-----|------|
+| --- | --- |
 | `config_loader.py` | YAML 配置解析 |
 | `logger_config.py` | 日誌設置 |
 | `storage_handler.py` | GCS / 本地儲存統一介面 |
@@ -286,6 +301,7 @@ streamlit run app.py
 ### 原始表 (Raw Tables)
 
 爬蟲直接輸出，結構對應各資料源：
+
 - `bid_info`: 競拍基本資訊 (證券代號、投標期、競拍日期等)
 - `history_price`: 股價歷史
 - `market_info`: 市場行情
@@ -309,19 +325,19 @@ streamlit run app.py
 ### 8.1 只執行爬蟲
 
 ```bash
-python main.py --mode crawl
+python main.py crawl
 ```
 
 ### 8.2 重新訓練模型
 
 ```bash
-python main.py --mode train
+python main.py train
 ```
 
 ### 8.3 產生預測
 
 ```bash
-python main.py --mode predict
+python main.py predict
 ```
 
 ### 8.4 檢查訓練元數據
@@ -333,50 +349,13 @@ cat json/training_metadata.json
 ### 8.5 切換資料庫 (SQLite)
 
 編輯 `config.yaml`:
+
 ```yaml
 database:
   type: "sqlite"
 ```
 
-然後執行：
-```bash
-python main.py --mode crawl
-
-## 9. 擴展與維運
-
-### 9.1 容器化部署
-
-```bash
-# 建構 Docker 映像
-docker build -t smart-bid-evaluator:latest .
-
-# 以容器執行爬蟲階段
-docker run -v /path/to/json:/app/json \
-  -e DATABASE_TYPE=bigquery \
-  smart-bid-evaluator:latest python main.py --mode crawl
-```
-
-### 9.2 分佈式處理升級
-
-當資料規模達到億級時，建議替換：
-- **Pandas** → **Dask** 或 **PySpark** (分佈式資料處理)
-- **單機訓練** → **Ray Tune** 或 **Horovod** (分佈式訓練)
-
-### 9.3 工作流編排
-
-使用 **Apache Airflow** 或 **Argo Workflows** 排程：
-
-```python
-# 偽代碼示意
-workflow = {
-    'crawl': {...},
-    'process': {'depends_on': 'crawl'},
-    'train': {'depends_on': 'process'},
-    'predict': {'depends_on': 'train'}
-}
-```
-
-### 9.4 監控與日誌
+### 9. 監控與日誌
 
 - **日誌輸出**: `logging.INFO` 級別記錄各階段進度
 - **訓練元數據記錄**: `json/training_metadata.json` 儲存每次訓練統計
@@ -474,7 +453,7 @@ workflow = {
 
 ## 11. 依賴與版本需求
 
-詳見 [requirements.txt](requirements.txt)。主要依賴：
+詳見 [requirements.txt](https://www.notion.so/requirements.txt)。主要依賴：
 
 - **Pandas >= 1.3.0**: 資料操作
 - **NumPy >= 1.21.0**: 數值運算
@@ -484,7 +463,6 @@ workflow = {
 - **CatBoost >= 1.0.0**: 分類 Boosting
 - **google-cloud-bigquery >= 3.0.0**: BigQuery 客戶端
 - **Streamlit >= 1.0.0**: Web UI 框架
-- **beautifulsoup4 >= 4.9.0**: HTML 解析
 - **finmind >= 1.9.0**: 台股資料 API
 
 ---
@@ -493,7 +471,8 @@ workflow = {
 
 ### 問題: BigQuery 認證失敗
 
-**解決方案**: 
+**解決方案**:
+
 1. 檢查 `json/gcp-auth.json` 路徑是否正確
 2. 驗證服務帳戶金鑰有 BigQuery 和 GCS 權限
 3. 設定環境變數: `export GOOGLE_APPLICATION_CREDENTIALS=json/gcp-auth.json`
@@ -501,6 +480,7 @@ workflow = {
 ### 問題: 爬蟲超時或連線失敗
 
 **解決方案**:
+
 1. 檢查網路連線
 2. 確認 `config.yaml` 中的 `user_agent` 未被伺服器阻擋
 3. 調整爬蟲重試次數和超時時間 (見各爬蟲實現)
@@ -508,6 +488,7 @@ workflow = {
 ### 問題: 記憶體溢出 (OOM)
 
 **解決方案**:
+
 1. 減小單次爬蟲的批次大小
 2. 分期執行各階段 (而非一次全部)
 3. 升級至 Dask/Spark 進行分佈式處理
@@ -515,6 +496,7 @@ workflow = {
 ### 問題: 特徵選擇後特徵數過少
 
 **解決方案**:
+
 1. 調整 `FeatureSelector` 的選擇閾值
 2. 檢查 `all_features` 表的資料品質
 3. 回顧特徵篩選的依據指標 (相關性/重要性)
@@ -523,18 +505,8 @@ workflow = {
 
 ## 13. 參考文件
 
-- [ARCHITECTURE.md](ARCHITECTURE.md): 深入架構設計說明
-- [config.yaml](config.yaml): 配置選項說明
-- **FinMind API 文檔**: https://finmind.github.io
+- [ARCHITECTURE.md](https://www.notion.so/ARCHITECTURE.md): 深入架構設計說明
+- [config.yaml](https://www.notion.so/config.yaml): 配置選項說明
+- **FinMind API 文檔**: [https://finmind.github.io](https://finmind.github.io/)
 - **Google BigQuery 文檔**: https://cloud.google.com/bigquery/docs
-- **Streamlit 文檔**: https://docs.streamlit.io
-
----
-
-## 14. 授權
-
-本專案遵循相關開源授權協議。詳見 LICENSE 檔案。
-
----
-
-**最後更新**: 2026-03-25
+- **Streamlit 文檔**: [https://docs.streamlit.io](https://docs.streamlit.io/)

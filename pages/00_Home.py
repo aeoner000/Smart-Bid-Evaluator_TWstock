@@ -190,49 +190,52 @@ with col2:
 
 # 模型效能層
 # 1. 建立具有雙 Y 軸的畫布
-fig = make_subplots(specs=[[{"secondary_y": True}]])
+# --- 模型效能層 (雙 Y 軸圖表) ---
 df = get_all_avg_pred_diff()
-# 2. 加入預測值與真實值 (主 Y 軸：左邊)
+
+fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+# 1. 加入折線圖 (主 Y 軸)
 fig.add_trace(
     go.Scatter(x=df.index, y=df['預測值平均'], name='預測值平均', 
                line=dict(color='#3b82f6', width=3)),
     secondary_y=False
 )
-
 fig.add_trace(
     go.Scatter(x=df.index, y=df['真實值平均'], name='真實值平均', 
                line=dict(color='#ef4444', width=2)),
     secondary_y=False
 )
 
-# 3. 加入誤差長條圖 (副 Y 軸：右邊)
-# 設定半透明顏色，才不會遮住後面的線
+# 2. 加入誤差長條圖 (副 Y 軸)
 fig.add_trace(
     go.Bar(x=df.index, y=df['平均誤差'], name='預測誤差',
-           marker_color='rgba(156, 163, 175, 0.3)'), # 灰色半透明
+           marker_color='rgba(0, 0, 0, 1)'), 
     secondary_y=True
 )
 
-# 4. 更新佈局
+# 3. 核心設定：使用 yaxis2 直接控制副軸 range
+max_err = df['平均誤差'].abs().max() 
+# 這裡將 range 放大 4 倍，誤差條就會縮小到畫面的 1/4 高度，看起來更像背景
+
 fig.update_layout(
-    title={
-        'text': "<b>模型預測值與真實值誤差對照圖(模型預測為比率)</b>", # 標題文字，支援 HTML 加粗
-        'y': 0.95,           # 標題高度位置 (0 到 1)
-        'x': 0.5,            # 標題水平位置 (0.5 為置中)
-        'xanchor': 'center', # 錨點置中
-        'yanchor': 'top',
-        'font': dict(size=18, color='#1e293b') # 字體大小與顏色
-    },
+    title={'text': "<b>模型預測值與真實值誤差對照圖</b>", 'x': 0.5, 'xanchor': 'center'},
     template="plotly_white",
-    margin=dict(l=20, r=20, t=20, b=20),
-    height=400, # 疊圖建議高度稍微拉高一點
+    height=450,
     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-    hovermode="x unified" # 鼠標移上去時會同時顯示三條數據，超好用！
+    hovermode="x unified",
+    # 主軸設定
+    yaxis=dict(title="比率"),
+    # 副軸設定 (yaxis2)
+    yaxis2=dict(
+        title="誤差幅度",
+        range=[-max_err, max_err], 
+        side="right",
+        showgrid=False,
+        overlaying="y"
+    )
 )
 
-fig.update_xaxes(title_text="樣本序號 (Sample Index)")
-# 設定左右 Y 軸的標題
-fig.update_yaxes(title_text="比率", secondary_y=False)
-fig.update_yaxes(title_text="比率誤差值", secondary_y=True)
+fig.update_xaxes(title_text="投標開始日")
 
 st.plotly_chart(fig, use_container_width=True)
