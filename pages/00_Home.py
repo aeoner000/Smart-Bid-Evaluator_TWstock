@@ -78,7 +78,7 @@ col1, col2 = st.columns(2)
 with col1:
     # 這裡的文字會直接套用 CSS，你可以換成你要的 Icon
     if st.button("進入即時預測", use_container_width=True, key="btn_analysis"):
-        st.switch_page("pages/01_presict_view.py")
+        st.switch_page("pages/01_predict_view.py")
 
 with col2:
     if st.button("查看歷史數據", use_container_width=True, key="btn_gcs"):
