@@ -1,5 +1,5 @@
 # Smart Bid Evaluator TWstock
-- **開發者**: 孫兆宏
+- **開發者**: 孫兆宏  
 台股競拍價格預測系統，透過自動化 ETL 流程整合多維度特徵數據，經過特徵工程與模型訓練產出預測結果。
 結果以 Streamlit UI 呈現，網址: https://smart-bid-evaluator-304192218654.asia-east1.run.app 
 
