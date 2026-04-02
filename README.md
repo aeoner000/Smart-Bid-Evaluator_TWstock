@@ -1,5 +1,5 @@
 # Smart Bid Evaluator TWstock
-
+- **開發者**: 孫兆宏
 台股競拍價格預測系統，透過自動化 ETL 流程整合多維度特徵數據，經過特徵工程與模型訓練產出預測結果。
 結果以 Streamlit UI 呈現，網址: https://smart-bid-evaluator-304192218654.asia-east1.run.app 
 
@@ -467,43 +467,7 @@ database:
 
 ---
 
-## 12. 故障排查
-
-### 問題: BigQuery 認證失敗
-
-**解決方案**:
-
-1. 檢查 `json/gcp-auth.json` 路徑是否正確
-2. 驗證服務帳戶金鑰有 BigQuery 和 GCS 權限
-3. 設定環境變數: `export GOOGLE_APPLICATION_CREDENTIALS=json/gcp-auth.json`
-
-### 問題: 爬蟲超時或連線失敗
-
-**解決方案**:
-
-1. 檢查網路連線
-2. 確認 `config.yaml` 中的 `user_agent` 未被伺服器阻擋
-3. 調整爬蟲重試次數和超時時間 (見各爬蟲實現)
-
-### 問題: 記憶體溢出 (OOM)
-
-**解決方案**:
-
-1. 減小單次爬蟲的批次大小
-2. 分期執行各階段 (而非一次全部)
-3. 升級至 Dask/Spark 進行分佈式處理
-
-### 問題: 特徵選擇後特徵數過少
-
-**解決方案**:
-
-1. 調整 `FeatureSelector` 的選擇閾值
-2. 檢查 `all_features` 表的資料品質
-3. 回顧特徵篩選的依據指標 (相關性/重要性)
-
----
-
-## 13. 參考文件
+## 12. 參考文件
 
 - [ARCHITECTURE.md](https://www.notion.so/ARCHITECTURE.md): 深入架構設計說明
 - [config.yaml](https://www.notion.so/config.yaml): 配置選項說明
